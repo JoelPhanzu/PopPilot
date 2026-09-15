@@ -1,0 +1,28 @@
+# Secrets — NE JAMAIS committer
+.env
+.env.local
+*.key
+
+# Données sources et bases locales (données clients : hors dépôt)
+*.db
+*.sqlite
+api/socle/*.db
+api/tests/fixtures/*_reel*
+data_local/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Next.js / Node
+node_modules/
+.next/
+out/
+web/.env*
+
+# OS / éditeur
+.DS_Store
+Thumbs.db
+.vscode/
