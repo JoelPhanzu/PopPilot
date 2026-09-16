@@ -16,16 +16,25 @@ fichiers Excel par un outil cohérent, historisé et fiable. Voir `docs/04_BACKL
 5. **Ne stocker que le brut** (crédit : colonnes SIG A→AF) ; dérivations recalculées.
 6. **Encours crédit calculé UNE fois** = invariant qui rend tous les rapports cohérents.
 
-## Structure du dépôt
+## Structure du dépôt (architecture PopPilot — Next.js/Supabase/API)
 ```
-socle/       schéma DB (schema.py), historisation, seed paramètres   ← PHASE 0 ✅
-ingest/      import + validation par source                          ← à venir
-engine/      calculs : dérivation, kpi, par, hierarchie, budget…     ← à venir
-bench/       banc d'essai Streamlit (validation locale)              ← à venir
-web/         application Django (production, Phase 6)                 ← à venir
-tests/       tests des calculs AVANT l'UI
-docs/        base de connaissances + 4 livrables de structuration
+PopPilot/
+├── CLAUDE.md                 # cette connaissance métier (lue par Claude Code)
+├── api/                      # API FastAPI qui EXPOSE les moteurs (ne pas réécrire les calculs)
+│   ├── main.py               # endpoints (/par, /provisions, /etats-financiers...)
+│   ├── auth_supabase.py      # sécurité : vérifie le jeton Supabase + cloisonnement agence (API)
+│   ├── engine/               # moteurs de calcul VALIDÉS (par, provisions, migrations, fina, aml...)
+│   ├── socle/                # schéma DB (schema.py → DATABASE_URL Supabase), historisation, calendrier
+│   ├── ingest/               # imports CBS (crédit, balance, épargne, budget...)
+│   └── tests/                # tests de validation (garde-fous)
+├── web/                      # interface Next.js (à créer, étape 4) — charte PopPilot
+├── supabase/                 # 01_schema.sql, 02_auth_rls.sql, 03_utilisateurs, 04_verifier
+├── assets/                   # logo MICROPOP
+└── docs/                     # architecture, guide, modèle de données, registres
 ```
+**Cloisonnement à DEUX niveaux** : RLS Supabase (accès directs) + filtre dans l'API (appels FastAPI,
+car l'API se connecte en 'postgres' qui ignore le RLS — cf. api/auth_supabase.py).
+
 
 ## État d'avancement
 - ✅ **Phase 0** — socle : 27 tables, historisation, calendrier ouvré RDC, paramètres, tests verts.

@@ -3,7 +3,7 @@
 ## Contexte (à lire par Claude Code en premier)
 Cette plateforme de pilotage pour une institution de microfinance (RDC) a été spécifiée et
 prototypée en profondeur. TOUTE la logique métier est déjà :
-- **documentée** dans `CLAUDE_CONNAISSANCE.md` (définitions PAR, barème provisions, cohérences FINA,
+- **documentée** dans `CLAUDE.md` (définitions PAR, barème provisions, cohérences FINA,
   règles AML, budget, multi-devises, historisation…) — c'est LA référence, ne rien inventer qui la contredise.
 - **codée et validée au centime** dans les moteurs Python `engine/` et `socle/` (contre les fichiers
   réels de l'institution). Ces moteurs sont FIABLES. On les RÉUTILISE, on ne les réécrit pas.
@@ -16,7 +16,7 @@ Hébergement Hostinger. Migration PROGRESSIVE : Python garde les calculs, Next.j
 
 ### Étape 1 — Supabase
 1. Créer un projet Supabase.
-2. Exécuter `SCHEMA_SUPABASE.sql` dans l'éditeur SQL (30 tables).
+2. Exécuter `supabase/01_schema.sql` dans l'éditeur SQL (30 tables).
 3. Ajouter une colonne `auth_uid uuid` à la table `utilisateur`, la lier à `auth.users`.
 4. Activer RLS et créer les policies (modèle fourni dans le SQL) : cloisonnement par agence.
 5. Créer les 4 rôles de test (DIRECTION, CDG, AGENCE, AUDIT).
@@ -62,6 +62,11 @@ Front Next.js sur Hostinger. API Python : VPS ou service séparé. Variables d'e
 - ⚠️ Le cyan du logo (#00AEEA) est trop lumineux en aplat → l'utiliser avec parcimonie (accents),
   le bleu foncé #0B3D5C porte l'identité visuelle sur les grandes surfaces.
 
+## SÉCURITÉ — cloisonnement à DEUX niveaux (IMPORTANT)
+Le RLS Supabase protège les accès DIRECTS à la base. Mais l'API se connecte en 'postgres'
+(ignore le RLS) → l'API DOIT vérifier le jeton Supabase de l'appelant et filtrer par agence
+elle-même. Voir api/auth_supabase.py (déjà en place). Ne jamais retirer ce filtre.
+
 ## POINTS DE VIGILANCE (erreurs déjà rencontrées — ne pas les refaire)
 - **Multi-devises** : grand livre TOUJOURS en USD ; FINA en CDF (balance CDF directe, pas de conversion
   des éléments comptables) ; système de paiement PAS de conversion. Voir CLAUDE_CONNAISSANCE §multidevise.
@@ -77,7 +82,7 @@ Voir `RESTE_A_FAIRE.md` : élaboration budget, corrections système de paiement,
 grille réintégration fiscale (DAF), effectifs RH.
 
 ## PREMIER PROMPT SUGGÉRÉ À CLAUDE CODE
-"Lis CLAUDE_CONNAISSANCE.md, ARCHITECTURE_CIBLE.md et GUIDE_CLAUDE_CODE.md. On construit la plateforme
+"Lis CLAUDE.md, ARCHITECTURE_CIBLE.md et GUIDE_CLAUDE_CODE.md. On construit la plateforme
 MICROPOP en Next.js + Supabase + API Python. Commence par l'étape 1 (Supabase) : aide-moi à créer le
 projet, exécuter le schéma, et mettre en place le RLS de cloisonnement par agence. Les moteurs Python
 dans engine/ sont validés, on les réutilisera via FastAPI — ne les réécris pas."
