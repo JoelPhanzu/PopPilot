@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+/* ===========================================================================
+   CHARTE GRAPHIQUE POPPILOT (pilotage MICROPOP)
+   Source : docs/GUIDE_CLAUDE_CODE.md § CHARTE GRAPHIQUE.
+   Regle : le bleu fonce #0B3D5C porte l'identite sur les grandes surfaces ;
+   le cyan #00AEEA est un ACCENT LEGER (liens, petits reperes) — jamais en
+   aplat large : sur fond clair il ne tient pas le contraste (2,48:1).
+   =========================================================================== */
+@theme {
+  /* Couleurs de marque → utilitaires bg-pop-bleu, text-pop-gris, border-pop-bord… */
+  --color-pop-bleu: #0b3d5c;        /* bleu principal : sidebar, en-tetes, barres */
+  --color-pop-bleu-2: #1b5e86;      /* bleu secondaire : survols, degrades, marques */
+  --color-pop-cyan: #00aeea;        /* cyan MICROPOP : accent leger uniquement */
+  --color-pop-gris: #58595b;        /* gris texte */
+  --color-pop-fond: #f4f7fa;        /* fond des panneaux */
+  --color-pop-carte: #ffffff;       /* fond des cartes */
+  --color-pop-bord: #e2e8f0;        /* filets, hairlines, bordures de cartes */
+  --color-pop-encre: #1f2a33;       /* texte principal (titres, chiffres) */
+
+  /* Etats (reserves : jamais utilises comme couleur de serie) */
+  --color-pop-ok: #1b7f5a;
+  --color-pop-alerte: #b26a00;
+  --color-pop-danger: #b3261e;
+
+  /* Pile systeme : aucun telechargement de fonte, donc aucune dependance
+     reseau a la compilation ni au premier rendu. */
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, "Noto Sans", sans-serif;
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  background-color: var(--color-pop-fond);
+  color: var(--color-pop-encre);
+}
+
+/* Accent cyan : liens et petits reperes */
+.lien-pop {
+  color: var(--color-pop-bleu-2);
+  text-underline-offset: 3px;
+}
+.lien-pop:hover {
+  color: var(--color-pop-cyan);
+  text-decoration: underline;
+}
+
+/* Colonnes de chiffres alignees (tableaux, graduations).
+   Jamais sur un grand nombre isole : tabular-nums fait paraitre « 121 » lache. */
+.chiffres {
+  font-variant-numeric: tabular-nums;
+}

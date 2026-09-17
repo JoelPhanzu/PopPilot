@@ -27,7 +27,7 @@ PopPilot/
 │   ├── socle/                # schéma DB (schema.py → DATABASE_URL Supabase), historisation, calendrier
 │   ├── ingest/               # imports CBS (crédit, balance, épargne, budget...)
 │   └── tests/                # tests de validation (garde-fous)
-├── web/                      # interface Next.js (à créer, étape 4) — charte PopPilot
+├── web/                      # interface Next.js (login + dashboard crédit) — charte PopPilot
 ├── supabase/                 # 01_schema.sql, 02_auth_rls.sql, 03_utilisateurs, 04_verifier
 ├── assets/                   # logo MICROPOP
 └── docs/                     # architecture, guide, modèle de données, registres
@@ -334,3 +334,31 @@ streamlit run bench/app.py          # tableau de bord visuel
   (génération FINA/AML/système paiement depuis l'interface, avec upload gabarit + download).
 - **preparer_demo.py** : script tout-en-un (comptes + import démo). Doc : docs/DEMARRAGE_RAPIDE.md.
 - Lancement : `python preparer_demo.py` puis `streamlit run bench/Accueil.py`.
+
+## Front Next.js (`web/`) — socle posé
+- **Next.js 16 + TypeScript + Tailwind v4 + App Router + `src/`**, `@supabase/ssr`.
+  ⚠️ Next 16 : le `middleware` s'appelle **`proxy`** (`src/proxy.ts`, runtime nodejs) et
+  `cookies()` / `params` / `searchParams` sont **asynchrones**.
+- **Charte** dans `src/app/globals.css` (`@theme` Tailwind v4) : `pop-bleu` #0B3D5C,
+  `pop-bleu-2` #1B5E86, `pop-cyan` #00AEEA, `pop-gris` #58595B, `pop-fond` #F4F7FA.
+  Le cyan ne tient pas le contraste en aplat (2,48:1) → accents seulement (filets, focus, liens).
+- **Écrans** : `/login` (Supabase Auth, logo + « Je rêve, je réalise ») et `/credit`
+  (Encours en chiffre phare, PAR1/PAR30/PAR90, provisions, PAR30 par agence en graphique
+  + tableau, filtre de date d'arrêté dans l'URL `?arrete=`).
+- **Rôle lu côté serveur** dans la table `utilisateur` (via `auth_uid`), jamais dans les
+  métadonnées du jeton — même source que `pp_role()` (RLS) et `utilisateur_courant()` (API).
+- **Cloisonnement, 3e verrou** : `src/lib/roles.ts` est le miroir exact de
+  `api/auth_supabase.py`, et le contexte `ContexteSession.tsx` masque les agrégats
+  institution. Un rôle AGENCE ne voit que sa ligne, et son total est la **somme de ses
+  seules lignes** (jamais l'agrégat MICROPOP) — vérifié sur les deux rôles.
+- **Aucun calcul dans le front** : il appelle `GET /par` et `GET /provisions`. Si l'API ne
+  répond pas, l'écran le dit et n'affiche rien plutôt qu'un chiffre estimé.
+- **Mode démonstration** (données d'illustration calées sur mai 2026) tant que Supabase
+  n'est pas configuré : double verrou — s'éteint dès que `.env.local` est renseigné et
+  **impossible en production**. Tout écran ainsi alimenté porte un bandeau explicite.
+- ⚠️ Pas de `next/font/google` : le téléchargement de la fonte à la compilation casse
+  `build`/`dev` sur un poste sans accès à fonts.gstatic.com → pile de polices système.
+- Lancer : `cd web && npm install && cp .env.example .env.local` (remplir les `[A_REMPLIR]`)
+  puis `npm run dev`. Doc : `web/README.md`.
+- Reste : pages compta/indicateurs, épargne, budget, rapports réglementaires, import CBS,
+  export Excel ; puis déploiement Hostinger.

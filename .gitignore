@@ -22,6 +22,7 @@ node_modules/
 .next/
 out/
 web/.env*
+!web/.env.example
 
 # OS / éditeur
 .DS_Store
