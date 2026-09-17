@@ -40,9 +40,20 @@ async def _cycle_de_vie(_app: FastAPI):
     if not os.environ.get("DATABASE_URL"):
         print("[PopPilot] ATTENTION : DATABASE_URL absente → repli SQLite local (base vide). "
               "Renseigner api/.env avant de lire le moindre chiffre.")
-    if not os.environ.get("SUPABASE_JWT_SECRET"):
-        print("[PopPilot] ATTENTION : SUPABASE_JWT_SECRET absent → les endpoints "
-              "authentifiés renverront 500.")
+    # Un seul des deux régimes de signature suffit : clés publiques du projet
+    # (JWKS, via SUPABASE_URL) OU secret partagé hérité. Avertir sur le secret
+    # seul ferait passer pour mal configurée une API parfaitement fonctionnelle.
+    from auth_supabase import url_supabase
+    if url_supabase():
+        print(f"[PopPilot] Jetons vérifiés via les clés publiques : "
+              f"{url_supabase()}/auth/v1/.well-known/jwks.json")
+    elif os.environ.get("SUPABASE_JWT_SECRET"):
+        print("[PopPilot] Jetons vérifiés via le secret partagé hérité (HS256). "
+              "Un projet migré vers les clés de signature émet de l'ES256 : "
+              "renseigner SUPABASE_URL dans api/.env.")
+    else:
+        print("[PopPilot] ATTENTION : ni SUPABASE_URL ni SUPABASE_JWT_SECRET → "
+              "les endpoints authentifiés renverront 500.")
     yield
 
 
@@ -91,10 +102,18 @@ def sante():
     # Un .env encore au gabarit ne compte PAS comme configure : sinon /sante
     # annoncerait "supabase_connectee: true" avec une URL qui ne resout meme pas.
     gabarit = env_encore_gabarit()
+    from auth_supabase import url_supabase
+    origine = url_supabase()
     return {
         "base_cible": cible_base(),
         "supabase_connectee": bool(os.environ.get("DATABASE_URL")) and not gabarit,
-        "jwt_configure": bool(os.environ.get("SUPABASE_JWT_SECRET")) and not gabarit,
+        # Deux regimes de signature : cles publiques (JWKS, projets recents) ou
+        # secret partage herite. Il en faut AU MOINS un, sinon aucun jeton ne
+        # peut etre verifie et tous les endpoints repondent 500.
+        "jwt_cles_publiques": f"{origine}/auth/v1/.well-known/jwks.json" if origine else None,
+        "jwt_secret_herite": bool(os.environ.get("SUPABASE_JWT_SECRET")) and not gabarit,
+        "jwt_configure": (bool(origine)
+                          or (bool(os.environ.get("SUPABASE_JWT_SECRET")) and not gabarit)),
         "a_corriger": gabarit,
     }
 

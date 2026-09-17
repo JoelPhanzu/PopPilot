@@ -11,4 +11,8 @@ xlwt>=1.3
 pandas>=2.0
 python-multipart>=0.0.9
 PyJWT>=2.8
+# Verification des jetons Supabase signes en ES256 (cles de signature asymetriques) :
+# PyJWT delegue la cryptographie a courbes elliptiques a ce paquet. Sans lui,
+# auth_supabase.py ne peut verifier QUE les anciens jetons HS256.
+cryptography>=42.0
 python-dotenv>=1.0

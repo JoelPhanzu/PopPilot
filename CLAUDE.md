@@ -362,3 +362,22 @@ streamlit run bench/app.py          # tableau de bord visuel
   puis `npm run dev`. Doc : `web/README.md`.
 - Reste : pages compta/indicateurs, épargne, budget, rapports réglementaires, import CBS,
   export Excel ; puis déploiement Hostinger.
+
+## Vérification des jetons Supabase — DEUX régimes (ne jamais figer HS256)
+- Les projets Supabase récents signent les jetons avec des **clés de signature asymétriques**
+  (clé ECC P-256 → **ES256**), vérifiées avec la **clé publique** publiée sur
+  `<SUPABASE_URL>/auth/v1/.well-known/jwks.json`. Il n'y a alors **aucun secret partagé**.
+- L'ancien régime (**HS256** + `SUPABASE_JWT_SECRET`) reste géré : `api/auth_supabase.py`
+  choisit le régime d'après l'algorithme du jeton. Un jeton HS256 est toujours vérifié avec
+  le SECRET, jamais avec une clé publique → l'attaque par confusion d'algorithme est fermée.
+- ⚠️ `jwt.decode(..., algorithms=["HS256"])` en dur rejette tout jeton d'un projet migré,
+  avec « **The specified alg value is not allowed** » — message qui fait croire à un jeton
+  corrompu alors que c'est l'API qui regarde au mauvais endroit.
+- `api/.env` : **SUPABASE_URL** (URL racine, sans `/rest/v1` ni slash final) est désormais
+  requise pour le régime ES256. `cryptography` est requis (PyJWT délègue les courbes
+  elliptiques). Les clés publiques sont mises en cache (10 min) : sinon un aller-retour
+  réseau par requête.
+- L'émetteur (`iss`) est vérifié dès que `SUPABASE_URL` est connue.
+- `GET /sante` dit maintenant lequel des deux régimes est actif (`jwt_cles_publiques`,
+  `jwt_secret_herite`). Tests : `python tests/test_securite_api.py` — 10 cas, dont
+  ES256 accepté, ES256 contrefait rejeté, `alg: none` rejeté.

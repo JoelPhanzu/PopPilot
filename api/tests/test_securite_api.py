@@ -30,10 +30,20 @@ AUTRES_AGENCES = ["AGENCE DE GOMA", "AGENCE DE MATADI"]
 
 def _preparer():
     """Base de test + deux utilisateurs liés à un compte Supabase (auth_uid)."""
+    # L'import de socle.schema charge api/.env (load_dotenv). Le nettoyage de
+    # l'environnement doit donc venir APRES, sinon le premier test de la série
+    # se fait re-remplir ses variables par le .env réel — et lui seul échoue,
+    # les suivants profitant du module déjà importé. Piège vicieux : le test
+    # semble alors dépendre de son rang dans la liste.
+    from socle.schema import init_db, get_session, fermer_moteurs, Utilisateur
+
     os.environ["SUPABASE_JWT_SECRET"] = SECRET_TEST
     os.environ.pop("DATABASE_URL", None)        # forcer le repli SQLite local
+    # Neutraliser la config réelle : ces cas testent le régime HS256 (secret
+    # partagé) ; SUPABASE_URL activerait en plus la vérification de l'émetteur,
+    # que les jetons forgés ici ne portent pas. Les cas ES256 la reposent.
+    os.environ.pop("SUPABASE_URL", None)
 
-    from socle.schema import init_db, get_session, fermer_moteurs, Utilisateur
     fermer_moteurs()                   # liberer le fichier SQLite (verrou Windows)
     if os.path.exists(DB):
         os.remove(DB)
@@ -66,6 +76,31 @@ def _jeton(uid: str, secret: str = SECRET_TEST) -> str:
     return jwt.encode({"sub": uid, "aud": "authenticated", "role": "authenticated",
                        "exp": int(dt.datetime.now().timestamp()) + 3600},
                       secret, algorithm="HS256")
+
+
+def _jeton_es256(uid: str, cle_privee, origine: str) -> str:
+    """Jeton signé comme le fait Supabase depuis les « JWT signing keys » : ES256."""
+    import jwt
+    return jwt.encode(
+        {"sub": uid, "aud": "authenticated", "role": "authenticated",
+         "iss": f"{origine}/auth/v1",
+         "exp": int(dt.datetime.now().timestamp()) + 3600},
+        cle_privee, algorithm="ES256")
+
+
+def _brancher_jwks(A, cle_publique):
+    """Remplace le client JWKS par la clé publique locale (aucun appel réseau)."""
+    class _CleFactice:
+        key = cle_publique
+
+    class _ClientFactice:
+        def get_signing_key_from_jwt(self, _token):
+            return _CleFactice()
+
+    A._client_jwks.cache_clear()
+    origine_fn = A._client_jwks
+    A._client_jwks = lambda *a, **k: _ClientFactice()
+    return origine_fn
 
 
 def _nettoyer():
@@ -216,6 +251,92 @@ def test_utilisateur_inactif_refuse():
     _nettoyer()
 
 
+def test_jeton_es256_accepte():
+    """Un jeton signé ES256 (clés de signature Supabase) doit être ACCEPTÉ.
+
+    Le défaut corrigé : `jwt.decode(..., algorithms=["HS256"])` rejetait tout
+    jeton d'un projet migré vers les clés de signature asymétriques, avec
+    « The specified alg value is not allowed ». Le tableau de bord ne voyait
+    qu'une erreur d'API, sans rapport apparent avec la configuration.
+    """
+    try:
+        from cryptography.hazmat.primitives.asymmetric import ec
+    except ImportError as e:                                     # pragma: no cover
+        raise D.TestSaute(f"paquet `cryptography` absent : {e}")
+
+    origine = "https://projet-de-test.supabase.co"
+    A, uids = _preparer()
+    ancien = _brancher_jwks(A, None)
+    try:
+        privee = ec.generate_private_key(ec.SECP256R1())
+        A._client_jwks = lambda *a, **k: type(
+            "C", (), {"get_signing_key_from_jwt":
+                      lambda _s, _t: type("K", (), {"key": privee.public_key()})()})()
+        os.environ["SUPABASE_URL"] = origine
+
+        u = A.utilisateur_courant(f"Bearer {_jeton_es256(uids['victoire'], privee, origine)}")
+        assert u["login"] == "victoire" and u["role"] == "AGENCE", \
+            f"jeton ES256 mal resolu : {u}"
+    finally:
+        A._client_jwks = ancien
+        A._client_jwks.cache_clear()
+        os.environ.pop("SUPABASE_URL", None)
+        _nettoyer()
+
+
+def test_jeton_es256_contrefait_rejete():
+    """Un jeton ES256 signé par UNE AUTRE clé doit être refusé (401).
+
+    Vérifie que la clé publique sert bien à valider la signature, et qu'on ne
+    se contente pas de lire le contenu du jeton.
+    """
+    try:
+        from cryptography.hazmat.primitives.asymmetric import ec
+    except ImportError as e:                                     # pragma: no cover
+        raise D.TestSaute(f"paquet `cryptography` absent : {e}")
+
+    from fastapi import HTTPException
+    origine = "https://projet-de-test.supabase.co"
+    A, uids = _preparer()
+    ancien = _brancher_jwks(A, None)
+    try:
+        legitime = ec.generate_private_key(ec.SECP256R1())
+        attaquant = ec.generate_private_key(ec.SECP256R1())
+        A._client_jwks = lambda *a, **k: type(
+            "C", (), {"get_signing_key_from_jwt":
+                      lambda _s, _t: type("K", (), {"key": legitime.public_key()})()})()
+        os.environ["SUPABASE_URL"] = origine
+
+        try:
+            A.utilisateur_courant(
+                f"Bearer {_jeton_es256(uids['cdg'], attaquant, origine)}")
+            raise AssertionError("FAILLE : jeton ES256 contrefait accepté")
+        except HTTPException as e:
+            assert e.status_code == 401, f"attendu 401, obtenu {e.status_code}"
+    finally:
+        A._client_jwks = ancien
+        A._client_jwks.cache_clear()
+        os.environ.pop("SUPABASE_URL", None)
+        _nettoyer()
+
+
+def test_algorithme_none_refuse():
+    """Un jeton `alg: none` (non signé) ne doit jamais passer."""
+    import jwt
+    from fastapi import HTTPException
+    A, uids = _preparer()
+    try:
+        nu = jwt.encode({"sub": uids["cdg"], "aud": "authenticated"},
+                        key="", algorithm="none")
+        try:
+            A.utilisateur_courant(f"Bearer {nu}")
+            raise AssertionError("FAILLE : jeton non signé (alg none) accepté")
+        except HTTPException as e:
+            assert e.status_code == 401, f"attendu 401, obtenu {e.status_code}"
+    finally:
+        _nettoyer()
+
+
 if __name__ == "__main__":
     D.sortir(D.lancer("Securite API (cloisonnement agence)", [
         (test_jeton_resout_le_bon_profil,        "jeton Supabase -> role + agence"),
@@ -223,6 +344,9 @@ if __name__ == "__main__":
         (test_endpoints_globaux_refuses_a_une_agence, "endpoints globaux refuses a une AGENCE (403)"),
         (test_endpoint_decaissements_ne_fuite_pas_le_global,
          "/decaissements : ni detail ni total des autres agences"),
+        (test_jeton_es256_accepte,               "jeton ES256 (cles de signature) accepte"),
+        (test_jeton_es256_contrefait_rejete,     "jeton ES256 contrefait rejete (401)"),
+        (test_algorithme_none_refuse,            "jeton non signe (alg none) refuse (401)"),
         (test_jeton_contrefait_rejete,           "jeton contrefait rejete (401)"),
         (test_sans_jeton_refuse,                 "aucun endpoint ouvert sans jeton (401)"),
         (test_utilisateur_inactif_refuse,        "compte desactive refuse (403)"),
