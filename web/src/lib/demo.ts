@@ -24,7 +24,7 @@ export function profilDemo(role: Role): Profil {
   return {
     login: `demo_${role.toLowerCase()}`,
     role,
-    agence: role === "AGENCE" ? "KINSHASA MATETE" : null,
+    agence: role === "AGENCE" ? "VICTOIRE" : null,
     demo: true,
   };
 }
@@ -32,6 +32,14 @@ export function profilDemo(role: Role): Profil {
 /**
  * Lignes par agence. Les totaux globaux sont RECALCULES par somme (voir
  * `parDemo`) : impossible qu'un total affiche ne corresponde pas au detail.
+ *
+ * Les NOMS D'AGENCE sont les vrais : a Kinshasa, VICTOIRE, OZONE, MASINA et
+ * GOMBE — pas d'agence inventee, meme en demonstration. Un nom fictif finit
+ * toujours par etre lu comme reel sur une capture d'ecran, et il ne
+ * correspondrait a aucun compte de test (le role AGENCE demo est rattache a
+ * VICTOIRE, comme le compte `bmvictoire`). Seuls les MONTANTS sont des
+ * illustrations. Le lien agence <-> montant n'a donc aucune valeur : ce sont
+ * des ordres de grandeur repartis, pas les chiffres de ces agences.
  */
 type AgenceDemo = Omit<LigneAgence, "pct_par30" | "par90"> & {
   par90: number;
@@ -41,8 +49,8 @@ type AgenceDemo = Omit<LigneAgence, "pct_par30" | "par90"> & {
 };
 
 const AGENCES_DEMO: AgenceDemo[] = [
-  { agence: "KINSHASA CENTRE", encours: 3_412_560, par1: 331_018, par30: 288_402, par90: 214_330, provisions: 261_430.1, nb_credits: 2510, nb_clients: 2395, statut: "ACTIVE" },
-  { agence: "KINSHASA MATETE", encours: 2_156_890, par1: 214_776, par30: 190_120, par90: 141_664, provisions: 169_880.45, nb_credits: 1584, nb_clients: 1509, statut: "ACTIVE" },
+  { agence: "GOMBE", encours: 3_412_560, par1: 331_018, par30: 288_402, par90: 214_330, provisions: 261_430.1, nb_credits: 2510, nb_clients: 2395, statut: "ACTIVE" },
+  { agence: "VICTOIRE", encours: 2_156_890, par1: 214_776, par30: 190_120, par90: 141_664, provisions: 169_880.45, nb_credits: 1584, nb_clients: 1509, statut: "ACTIVE" },
   { agence: "LUBUMBASHI", encours: 1_874_320, par1: 196_330, par30: 172_118, par90: 130_442, provisions: 155_214.3, nb_credits: 1376, nb_clients: 1312, statut: "ACTIVE" },
   { agence: "MATADI", encours: 1_208_440, par1: 129_006, par30: 113_220, par90: 86_118, provisions: 101_442.88, nb_credits: 887, nb_clients: 846, statut: "ACTIVE" },
   { agence: "KIKWIT", encours: 712_684, par1: 76_317, par30: 67_140, par90: 51_446, provisions: 60_276.69, nb_credits: 523, nb_clients: 499, statut: "ACTIVE" },
