@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from socle.schema import init_db, get_session, FaitCredit, Base
+from socle.schema import init_db, get_session, fermer_moteurs, FaitCredit, Base
 from socle import historisation as H
 from socle.seed_parametres import seed
 
@@ -17,6 +17,9 @@ DB = "socle/test_micropop.db"
 
 
 def _fresh():
+    # Fermer les pools avant d'effacer le fichier : sous Windows, un moteur SQLite
+    # encore ouvert verrouille le .db et os.remove lève PermissionError (WinError 32).
+    fermer_moteurs()
     if os.path.exists(DB):
         os.remove(DB)
     init_db(DB)
@@ -24,8 +27,26 @@ def _fresh():
 
 
 def test_schema_cree_toutes_les_tables():
+    """Le modèle ORM doit correspondre EXACTEMENT au schéma déployé sur Supabase.
+
+    On ne compte pas les tables (un nombre en dur se périme à chaque ajout, et c'est
+    ce qui était arrivé : 28 attendu pour 30 réelles). On compare le jeu de tables du
+    modèle à celui de supabase/01_schema.sql — c'est la dérive ORM/base qui fait mal :
+    une colonne ou une table présente d'un seul côté casse l'API en silence.
+    """
     s = _fresh()
-    assert len(Base.metadata.tables) == 28
+    sql = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                       "..", "supabase", "01_schema.sql")
+    orm = set(Base.metadata.tables)
+    assert orm, "aucune table dans le modèle ORM"
+
+    if os.path.exists(sql):
+        import re
+        deployees = set(re.findall(r"CREATE TABLE (\w+)",
+                                   open(sql, encoding="utf-8").read()))
+        assert orm == deployees, (
+            f"dérive ORM/Supabase — seulement dans l'ORM : {sorted(orm - deployees)} ; "
+            f"seulement dans le SQL : {sorted(deployees - orm)}")
     s.close()
 
 
@@ -132,6 +153,7 @@ def test_jour_exceptionnel():
 
 
 def test_seed_parametres():
+    fermer_moteurs()                      # libérer le fichier SQLite (Windows)
     if os.path.exists(DB):
         os.remove(DB)
     seed(DB)
@@ -145,9 +167,47 @@ def test_seed_parametres():
     s.close()
 
 
+def test_fermer_agence_preserve_le_referentiel():
+    """Fermer une agence ne doit RIEN effacer d'autre que son statut.
+
+    `enregistrer_agence` était un upsert intégral : comme `fermer_agence` ne passe que
+    statut/date/motif, fermer Goma effaçait son nom, sa région et sa date d'ouverture
+    (« Goma | Nord-Kivu | 2015-03-01 » -> « AGENCE DE GOMA | None | None »). Le
+    portefeuille d'une agence fermée reste déclarable à la BCC : perdre son référentiel
+    au moment où on la ferme est le pire moment.
+    """
+    from socle.schema import DimAgence
+    from socle import agences as A
+    s = _fresh()
+    A.enregistrer_agence(s, "AGENCE DE GOMA", nom="Goma", region="Nord-Kivu",
+                         date_ouverture=dt.date(2015, 3, 1))
+
+    A.fermer_agence(s, "AGENCE DE GOMA", dt.date(2025, 1, 1), motif="Occupation M23")
+    a = s.query(DimAgence).filter_by(code_agence="AGENCE DE GOMA").one()
+    assert a.statut == "FERMEE" and a.date_fermeture == dt.date(2025, 1, 1)
+    assert a.nom == "Goma", f"nom efface par la fermeture : {a.nom!r}"
+    assert a.region == "Nord-Kivu", f"region effacee par la fermeture : {a.region!r}"
+    assert a.date_ouverture == dt.date(2015, 3, 1), "date d'ouverture effacee"
+    assert "AGENCE DE GOMA" in A.agences_fermees(s)
+
+    # Réouverture : le statut revient, le référentiel tient, la date de fermeture part.
+    A.rouvrir_agence(s, "AGENCE DE GOMA")
+    a = s.query(DimAgence).filter_by(code_agence="AGENCE DE GOMA").one()
+    assert (a.statut, a.date_fermeture, a.motif) == ("ACTIVE", None, None)
+    assert (a.nom, a.region, a.date_ouverture) == ("Goma", "Nord-Kivu", dt.date(2015, 3, 1))
+
+    # Rouvrir une agence inexistante ne doit rien créer.
+    assert A.rouvrir_agence(s, "AGENCE FANTOME") is None
+    assert s.query(DimAgence).filter_by(code_agence="AGENCE FANTOME").count() == 0
+    s.close()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
             fn()
             print(f"  ✓ {name}")
+    fermer_moteurs()
+    if os.path.exists(DB):
+        os.remove(DB)                     # ne pas laisser de base de test derrière soi
     print("Tous les tests Phase 0 passent.")

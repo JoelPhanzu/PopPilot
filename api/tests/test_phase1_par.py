@@ -7,11 +7,15 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import donnees_test as D   # localise les sources reelles + compte rendu honnete
+
+from socle.schema import fermer_moteurs
 from ingest.import_credit import importer_credit
 from engine.par import calculer_par
 
-EXTRACTION = "/mnt/user-data/uploads/Enours_MAI_2026_.xls"
+EXTRACTION = D.fichier("Enours_MAI_2026_.xls") or "(source absente : Enours_MAI_2026_.xls)"
 ARRETE = dt.date(2026, 5, 30)
 DB = "socle/test_phase1.db"
 
@@ -28,9 +32,8 @@ REF = {
 
 
 def test_par_mai_egale_dashboard():
-    if not os.path.exists(EXTRACTION):
-        print("  (extraction absente — test sauté)")
-        return
+    D.exiger("Enours_MAI_2026_.xls")
+    fermer_moteurs()
     if os.path.exists(DB):
         os.remove(DB)
     importer_credit(EXTRACTION, ARRETE, date_snapshot=dt.date(2026, 6, 1), db_path=DB)
@@ -48,8 +51,7 @@ def test_par_mai_egale_dashboard():
 
 
 def test_import_idempotent():
-    if not os.path.exists(EXTRACTION):
-        return
+    D.exiger("Enours_MAI_2026_.xls")
     r1 = importer_credit(EXTRACTION, ARRETE, db_path=DB)
     r2 = importer_credit(EXTRACTION, ARRETE, db_path=DB)  # ré-import
     assert r2["purges"] == r1["acceptees"]                # a bien purgé le précédent
@@ -57,17 +59,16 @@ def test_import_idempotent():
     assert abs(r["global"].encours - 10814330.66) < 0.01  # pas de doublon
 
 
-AVRIL = "/mnt/user-data/uploads/Encours_crédit_AVRIL_2026.xlsx"
+AVRIL = D.fichier("Encours_crédit_AVRIL_2026.xlsx") or "(source absente : Encours_crédit_AVRIL_2026.xlsx)"
 ARRETE_AVRIL = dt.date(2026, 4, 30)
 
 
 def test_provisions_et_croissance():
     """Provision capital et croissance recalculées == fichier de mai (écart nul)."""
-    if not (os.path.exists(EXTRACTION) and os.path.exists(AVRIL)):
-        print("  (extractions absentes — test sauté)")
-        return
+    D.exiger("Enours_MAI_2026_.xls"); D.exiger("Encours_crédit_AVRIL_2026.xlsx")
     from socle.seed_parametres import seed
     from engine.derivation import deriver_provisions, croissance_portefeuille
+    fermer_moteurs()
     if os.path.exists(DB):
         os.remove(DB)
     seed(DB)
@@ -85,8 +86,7 @@ def test_provisions_et_croissance():
 
 def test_migrations_et_cout_du_risque():
     """Coût du risque + migrations (par tranche de départ) == Dashboard mai (écart nul)."""
-    if not (os.path.exists(EXTRACTION) and os.path.exists(AVRIL)):
-        return
+    D.exiger("Enours_MAI_2026_.xls"); D.exiger("Encours_crédit_AVRIL_2026.xlsx")
     from engine.migrations import analyser_migrations
     r = analyser_migrations(ARRETE, ARRETE_AVRIL, db_path=DB)
     assert abs(r["cout_du_risque"] - 1119.37) < 0.02
@@ -98,13 +98,12 @@ def test_migrations_et_cout_du_risque():
         assert abs(r["migration_vers"][tr] - v) < 0.05, f"migr {tr}"
 
 
-OBJECTIFS = "/mnt/user-data/uploads/OBJECTIF.xlsx"
+OBJECTIFS = D.fichier("OBJECTIF.xlsx") or "(source absente : OBJECTIF.xlsx)"
 
 
 def test_decaissements():
     """Décaissements 1-31 mai == Dashboard (517 prêts / 1 070 672), écart nul."""
-    if not os.path.exists(EXTRACTION):
-        return
+    D.exiger("Enours_MAI_2026_.xls")
     from engine.decaissement import decaissements
     d = decaissements(ARRETE, dt.date(2026, 5, 1), dt.date(2026, 5, 31), db_path=DB)
     assert d["global"]["nombre"] == 517
@@ -114,8 +113,7 @@ def test_decaissements():
 
 def test_agence_fermee_vs_orphelins():
     """Goma (fermée) → portefeuille gelé, exclue des orphelins ; orphelins = anciens agents actifs."""
-    if not (os.path.exists(EXTRACTION) and os.path.exists(OBJECTIFS)):
-        return
+    D.exiger("Enours_MAI_2026_.xls"); D.exiger("OBJECTIF.xlsx")
     from socle.agences import seed_agences
     from ingest.import_objectifs import importer_objectifs
     from engine.decaissement import portefeuille_orphelin
@@ -132,16 +130,11 @@ def test_agence_fermee_vs_orphelins():
 
 
 if __name__ == "__main__":
-    test_par_mai_egale_dashboard()
-    print("  ✓ test_par_mai_egale_dashboard (écart nul vs Dashboard)")
-    test_import_idempotent()
-    print("  ✓ test_import_idempotent")
-    test_provisions_et_croissance()
-    print("  ✓ test_provisions_et_croissance (provision + croissance = fichier, écart nul)")
-    test_migrations_et_cout_du_risque()
-    print("  ✓ test_migrations_et_cout_du_risque (coût du risque + 5 tranches = Dashboard)")
-    test_decaissements()
-    print("  ✓ test_decaissements (517 prêts / 1 070 672 = Dashboard, écart nul)")
-    test_agence_fermee_vs_orphelins()
-    print("  ✓ test_agence_fermee_vs_orphelins (Goma gelée, exclue des orphelins)")
-    print("Phase 1 validée : PAR, provisions, croissance, migrations, décaissements == Excel.")
+    D.sortir(D.lancer("Phase 1 - credit", [
+        (test_par_mai_egale_dashboard,      "PAR mai = Dashboard (ecart nul)"),
+        (test_import_idempotent,            "import idempotent (pas de doublon)"),
+        (test_provisions_et_croissance,     "provisions 938 244,42 + croissance -0,8904 %"),
+        (test_migrations_et_cout_du_risque, "cout du risque 1 119,37 + 5 tranches"),
+        (test_decaissements,                "decaissements 517 prets / 1 070 672"),
+        (test_agence_fermee_vs_orphelins,   "Goma gelee, exclue des orphelins"),
+    ]))

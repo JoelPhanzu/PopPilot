@@ -4,20 +4,23 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import donnees_test as D   # localise les sources reelles + compte rendu honnete
+
+from socle.schema import fermer_moteurs
 from socle.seed_parametres import seed
 from ingest.import_epargne import importer_epargne
 from engine.epargne import synthese_epargne, nb_epargnants
 
-CSV = "/mnt/user-data/uploads/Inventaire_depot_juillet_2026_Inventaire_depot_script___3_.csv"
+INVENTAIRE = "Inventaire_depot_juillet_2026_Inventaire_depot_script___3_"
 ARRETE = dt.date(2026, 7, 31)
 DB = "socle/test_epargne.db"
 
 
 def test_import_et_ventilation():
-    if not os.path.exists(CSV):
-        print("  (inventaire absent — test sauté)")
-        return
+    CSV = D.exiger_un_de(INVENTAIRE + ".csv", INVENTAIRE + ".xlsx")
+    fermer_moteurs()
     if os.path.exists(DB):
         os.remove(DB)
     seed(DB)
@@ -36,6 +39,6 @@ def test_import_et_ventilation():
 
 
 if __name__ == "__main__":
-    test_import_et_ventilation()
-    print("  ✓ test_import_et_ventilation (170k comptes, ventilation type = règle CDG)")
-    print("Épargne validée.")
+    D.sortir(D.lancer("Epargne", [
+        (test_import_et_ventilation, "170k comptes, ventilation type = regle CDG"),
+    ]))
