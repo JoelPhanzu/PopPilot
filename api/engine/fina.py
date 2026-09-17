@@ -41,6 +41,12 @@ def generer_fina(date_arrete: dt.date, db_path="socle/micropop.db") -> dict:
     prets = s.execute(
         select(FaitCredit).where(FaitCredit.date_arrete == date_arrete)
     ).scalars().all()
+    # Taux officiel saisi (§42) : sert de TÉMOIN au contrôle X1 ci-dessous, jamais à convertir.
+    try:
+        from engine.etats_financiers import taux_change
+        taux_officiel = taux_change(s, date_arrete)
+    except ValueError:
+        taux_officiel = None
     s.close()
 
     # ── Montants comptables EN CDF, directement depuis la balance (aucune conversion) ──
@@ -77,26 +83,55 @@ def generer_fina(date_arrete: dt.date, db_path="socle/micropop.db") -> dict:
     f11["encours_brut_cdf"] = encours_bilan
     f11["retard_total_cdf"] = retard_total
 
-    # ── F6 : épargne (l'épargne CDF vient de l'inventaire, déjà en CDF pour les comptes CDF) ──
+    # ── F6 : épargne. Totaux en USD (base homogène) ET par devise d'origine.
+    # Additionner des USD et des CDF bruts donnait un « total » sans signification,
+    # qui faussait ensuite la part groupe de F6 d'un facteur ~100.
+    f6 = None
+    f6_indisponible = None
     try:
-        syn = synthese_epargne(date_arrete, db_path=db_path, en_usd=False)
-        f6 = {"epargne_totale_origine": syn["encours_total"], "groupe": syn["epargne_groupe"],
+        syn = synthese_epargne(date_arrete, db_path=db_path, en_usd=True)
+        f6 = {"epargne_totale_usd": syn["encours_total"], "groupe_usd": syn["epargne_groupe"],
+              "part_groupe": (syn["epargne_groupe"] / syn["encours_total"]
+                              if syn["encours_total"] else None),
+              "par_devise_origine": syn["par_devise_origine"],
               "par_type": syn["par_type"]}
-    except Exception:
-        f6 = None
+    except Exception as e:                       # noqa: BLE001 — motif conservé, pas avalé
+        f6_indisponible = f"{type(e).__name__}: {e}"
 
     # ── COHÉRENCES INTER-FEUILLES (§35) — toutes en CDF, sans conversion ──
+    # RÈGLE : un contrôle doit pouvoir ÉCHOUER. Les anciens comparaient une variable à
+    # elle-même (f5["total_cdf"] EST encours_bilan) : toujours verts, ils ne prouvaient
+    # rien. Chacun confronte désormais DEUX chemins de calcul indépendants.
+    tranches_f11 = sum(f11[k] for k in ("1-30", "31-60", "61-90", "91-180", "181-360", "361+"))
+    # X1 : l'encours de l'extraction crédit (USD), converti au taux OFFICIEL saisi,
+    # doit retrouver l'encours du bilan CDF. C'est l'invariant X-1 du dossier, et le
+    # seul vrai juge de `prop` : `prop` est un taux implicite, il ne peut pas s'écarter
+    # du taux BCC sans qu'un des deux fichiers soit du mauvais mois ou incomplet.
+    ecart_x1 = None
+    if taux_officiel and enc_credit:
+        attendu_cdf = enc_credit * taux_officiel
+        ecart_x1 = {"ecart_relatif": (encours_bilan - attendu_cdf) / attendu_cdf,
+                    "taux_implicite": prop, "taux_officiel": taux_officiel,
+                    "encours_credit_usd": enc_credit, "encours_bilan_cdf": encours_bilan}
+        ecart_x1["ok"] = abs(ecart_x1["ecart_relatif"]) < 0.01     # 1 % de tolérance
     controles = {
-        "X2_F5_total_vs_bilan": {"ecart": abs(f5["total_cdf"] - encours_bilan),
-                                 "ok": abs(f5["total_cdf"] - encours_bilan) < 1},
-        "X2_F11_encours_vs_bilan": {"ecart": abs(f11["encours_brut_cdf"] - encours_bilan),
-                                    "ok": abs(f11["encours_brut_cdf"] - encours_bilan) < 1},
-        "groupe_CT_coherent": {"total_groupe_ct": f5["groupe_sain_cdf"] + f5["groupe_retard_cdf"]},
+        # 1) crédit (USD, extraction) vs bilan (CDF, balance) : deux sources indépendantes
+        "X1_credit_vs_bilan": ecart_x1 or {"ok": None, "motif": "taux officiel non saisi"},
+        # 2) les tranches d'âge F11 (extraction crédit, proportionnées) redonnent le
+        #    capital en retard du bilan (compte 39) — deux sources différentes.
+        "X2_F11_tranches_vs_compte_39": {
+            "ecart": abs(tranches_f11 - retard_total),
+            "ok": abs(tranches_f11 - retard_total) < max(1.0, abs(retard_total) * 0.005),
+            "detail": {"somme_tranches": tranches_f11, "compte_39": retard_total}},
+        # 3) la part groupe LISANGA doit rester dans les bornes du portefeuille
+        "groupe_CT_coherent": {
+            "total_groupe_ct": f5["groupe_sain_cdf"] + f5["groupe_retard_cdf"],
+            "ok": 0 <= f5["groupe_sain_cdf"] + f5["groupe_retard_cdf"] <= encours_bilan},
     }
 
     return {"date_arrete": date_arrete, "devise": "CDF",
-            "F5": f5, "F6": f6, "F11": f11,
-            "total_actif_cdf": _somme_prefixes(soldes, "1", "2", "3", "5") if False else None,
+            "F5": f5, "F6": f6, "F6_indisponible": f6_indisponible, "F11": f11,
+            "encours_bilan_cdf": encours_bilan,
             "controles": controles}
 
 

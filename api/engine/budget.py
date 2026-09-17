@@ -13,24 +13,23 @@ from __future__ import annotations
 import datetime as dt
 from collections import defaultdict
 from sqlalchemy import select, func
-from socle.schema import FaitBudget, FaitBalance, get_session
+from socle.schema import FaitBudget, get_session
+from engine.etats_financiers import soldes_balance
 from ingest.import_budget import lire_mapping
 
 
-def realise_cumule_par_ligne(date_arrete, db_path="socle/micropop.db"):
-    """Réalisé CUMULÉ (depuis janvier) par ligne budgétaire, depuis la balance à cette date."""
+def realise_cumule_par_ligne(date_arrete, db_path="socle/micropop.db", devise="USD"):
+    """Réalisé CUMULÉ (depuis janvier) par ligne budgétaire, depuis la balance à cette date.
+    Devise explicite : le budget se suit en USD, jamais sur la balance CDF du FINA."""
     if date_arrete is None:
         return {}
     mapping = lire_mapping(db_path=db_path)
     s = get_session(db_path)
-    comptes = s.execute(
-        select(FaitBalance.numero_compte, FaitBalance.solde_net)
-        .where(FaitBalance.date_arrete == date_arrete)
-    ).all()
+    comptes = soldes_balance(s, date_arrete, devise)
     s.close()
     if not comptes:
         return {}
-    balance = [(str(n).strip(), (v or 0.0)) for n, v in comptes]
+    balance = [(str(c.numero_compte).strip(), (c.solde_net or 0.0)) for c in comptes]
     prefixes = sorted(mapping.keys(), key=lambda c: -len(c.replace(".", "")))
     realise = defaultdict(float)
     for num_bal, solde in balance:

@@ -10,9 +10,13 @@ Lancer en local :  uvicorn main:app --reload
 """
 from __future__ import annotations
 import datetime as dt
-from fastapi import FastAPI, Query, HTTPException, Depends
+import os
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Query, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
+from socle.schema import cible_base, env_encore_gabarit   # charge api/.env au passage
 from engine.par import calculer_par
 from engine.derivation import deriver_provisions, croissance_portefeuille
 from engine.migrations import analyser_migrations
@@ -24,11 +28,44 @@ from engine.epargne import synthese_epargne, nb_epargnants
 from auth_supabase import (utilisateur_courant, filtrer_par_agence,
                            exiger_role, ROLES_ACCES_TOTAL)
 
+@asynccontextmanager
+async def _cycle_de_vie(_app: FastAPI):
+    """Au démarrage : annoncer la base réellement visée et l'état du secret JWT.
+    Une API qui tourne sur le repli SQLite sortirait des chiffres d'une base vide,
+    sans erreur visible — d'où cet avertissement explicite."""
+    print(f"[PopPilot] Base cible : {cible_base()}")
+    gabarit = env_encore_gabarit()
+    if gabarit:
+        print(f"[PopPilot] ATTENTION : {gabarit}")
+    if not os.environ.get("DATABASE_URL"):
+        print("[PopPilot] ATTENTION : DATABASE_URL absente → repli SQLite local (base vide). "
+              "Renseigner api/.env avant de lire le moindre chiffre.")
+    if not os.environ.get("SUPABASE_JWT_SECRET"):
+        print("[PopPilot] ATTENTION : SUPABASE_JWT_SECRET absent → les endpoints "
+              "authentifiés renverront 500.")
+    yield
+
+
 app = FastAPI(title="PopPilot API", version="1.0",
-              description="Expose les moteurs de pilotage MICROPOP (validés au centime).")
+              description="Expose les moteurs de pilotage MICROPOP (validés au centime).",
+              lifespan=_cycle_de_vie)
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
+
+
+@app.exception_handler(ValueError)
+def _donnee_absente(_request: Request, exc: ValueError):
+    """Traduit les ValueError des moteurs en 404 explicite.
+
+    POURQUOI : les moteurs signalent une periode non chargee par
+    `raise ValueError("Aucun pret pour l'arrete ...")`. Sans ce gestionnaire,
+    FastAPI renvoie un 500 "Internal Server Error" nu : l'appelant croit a une
+    panne de l'API alors que la donnee n'est simplement pas importee, et le
+    message utile du moteur reste enterre dans les logs du serveur.
+    404 = la ressource demandee (cet arrete) n'existe pas encore.
+    """
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
 
 
 def _d(s: str) -> dt.date:
@@ -42,6 +79,24 @@ def _d(s: str) -> dt.date:
 def racine():
     return {"service": "PopPilot API", "statut": "ok",
             "message": "Moteurs de pilotage MICROPOP. Voir /docs pour les endpoints."}
+
+
+@app.get("/sante")
+def sante():
+    """Diagnostic de configuration (aucun secret n'est renvoye).
+
+    A appeler EN PREMIER apres deploiement : si base_cible dit "SQLite local (repli)",
+    l'API ne parle PAS a Supabase et tous les chiffres seraient ceux d'une base vide.
+    """
+    # Un .env encore au gabarit ne compte PAS comme configure : sinon /sante
+    # annoncerait "supabase_connectee: true" avec une URL qui ne resout meme pas.
+    gabarit = env_encore_gabarit()
+    return {
+        "base_cible": cible_base(),
+        "supabase_connectee": bool(os.environ.get("DATABASE_URL")) and not gabarit,
+        "jwt_configure": bool(os.environ.get("SUPABASE_JWT_SECRET")) and not gabarit,
+        "a_corriger": gabarit,
+    }
 
 
 @app.get("/par")
@@ -91,11 +146,23 @@ def endpoint_croissance(arrete: str, precedent: str, user: dict = Depends(utilis
 @app.get("/decaissements")
 def endpoint_decaissements(arrete: str, debut: str, fin: str,
                            user: dict = Depends(utilisateur_courant)):
+    """Décaissements sur [début ; fin]. Cloisonné : une agence ne voit QUE son agence.
+
+    Le détail par agence était bien filtré, mais le bloc « global » restait celui de
+    toute l'institution : un responsable d'agence lisait donc le volume décaissé de
+    MICROPOP entier. Pour un rôle AGENCE, le « global » est désormais recalculé sur
+    sa seule agence — jamais une somme qu'il n'a pas le droit de voir.
+    """
     r = decaissements(_d(arrete), _d(debut), _d(fin))
     if user["role"] not in ROLES_ACCES_TOTAL:
-        # cloisonner : ne garder que l'agence de l'utilisateur
         ag = user.get("agence")
-        r["par_agence"] = {k: v for k, v in r.get("par_agence", {}).items() if k == ag}
+        par_agence = {k: v for k, v in r.get("par_agence", {}).items() if k == ag}
+        sienne = par_agence.get(ag, {"nombre": 0, "volume": 0.0})
+        r["par_agence"] = par_agence
+        r["global"] = {"nombre": sienne["nombre"], "volume": sienne["volume"]}
+        r["portee"] = ag                      # dire explicitement ce que couvre le total
+    else:
+        r["portee"] = "MICROPOP"
     return r
 
 

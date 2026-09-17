@@ -59,24 +59,36 @@ def comptes_actifs(path_dormant, date_arrete, col_date=2, col_sexe=5, col_statut
             "actifs_hommes": h, "actifs_femmes": f, "actifs_pm": pm, "seuil": seuil}
 
 
-def transactions_inventaire(path_inventaire, taux_cdf=2263.57,
-                            col_devise=5, col_depot=23, col_retrait=24):
-    """Versement (dépôts) / retrait depuis l'inventaire, nombre + volume, ventilé CDF/USD.
-    Volume BCC = nombre d'opérations ; Valeur = montant. USD converti en CDF."""
-    wb = openpyxl.load_workbook(path_inventaire, read_only=True, data_only=True)
-    ws = wb.worksheets[0]
+def transactions_inventaire(path_inventaire, taux_cdf=None):
+    """Versement (dépôts) / retrait depuis l'inventaire, nombre + montant, par DEVISE SÉPARÉE.
+
+    LECTURE PAR NOM DE COLONNE (devise, montant_depot, montant_retrait). Auparavant, ce
+    moteur lisait les colonnes 23 et 24 pendant que l'AML lisait les colonnes 22 et 23 du
+    MÊME fichier : sur l'inventaire de juillet, ce décalage d'un cran faisait compter les
+    retraits comme des versements et le solde de fin comme des retraits. Le CBS déplace
+    ses colonnes d'un mois à l'autre ; seuls les en-têtes sont stables.
+
+    Le rapport BCC veut les devises SÉPARÉES (pas de conversion) — c'est ce que portent
+    `valeur_cdf_native` et `valeur_usd`. Le total converti n'est calculé que si un taux
+    est fourni ; sans taux, il vaut None au lieu d'un montant faux.
+    """
+    from ingest.import_epargne import lignes_inventaire, verifier_colonnes
     res = {"versement": {"CDF": [0, 0.0], "USD": [0, 0.0]},
            "retrait": {"CDF": [0, 0.0], "USD": [0, 0.0]}}
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        devise = "USD" if str(row[col_devise - 1] or "").strip().upper() == "USD" else "CDF"
-        dep = _f(row[col_depot - 1]); ret = _f(row[col_retrait - 1])
+    premiere = True
+    for row in lignes_inventaire(path_inventaire):
+        if premiere:
+            verifier_colonnes(row, ("devise", "montant_depot", "montant_retrait"))
+            premiere = False
+        devise = "USD" if str(row.get("devise") or "").strip().upper() == "USD" else "CDF"
+        dep = _f(row.get("montant_depot")); ret = _f(row.get("montant_retrait"))
         if dep > 0:
             res["versement"][devise][0] += 1
             res["versement"][devise][1] += dep
         if ret > 0:
             res["retrait"][devise][0] += 1
             res["retrait"][devise][1] += ret
-    # totaux en CDF (USD converti) et en USD
+
     def synth(bloc):
         nb_cdf, val_cdf = res[bloc]["CDF"]
         nb_usd, val_usd = res[bloc]["USD"]
@@ -84,21 +96,38 @@ def transactions_inventaire(path_inventaire, taux_cdf=2263.57,
             "nb_total": nb_cdf + nb_usd,
             "valeur_cdf_native": val_cdf,          # opérations déjà en CDF
             "valeur_usd": val_usd,                 # opérations en USD (montant USD)
-            "valeur_usd_en_cdf": val_usd * taux_cdf,
-            "valeur_totale_cdf": val_cdf + val_usd * taux_cdf,
+            "valeur_usd_en_cdf": (val_usd * taux_cdf) if taux_cdf else None,
+            "valeur_totale_cdf": (val_cdf + val_usd * taux_cdf) if taux_cdf else None,
             "nb_cdf": nb_cdf, "nb_usd": nb_usd,
         }
     return {"versement": synth("versement"), "retrait": synth("retrait"), "taux": taux_cdf}
 
 
 if __name__ == "__main__":
+    import os
     import sys
-    inv = "/mnt/user-data/uploads/Rapport_inventaire_depot_Aout2026_Inventaire_depot_script_.xlsx"
-    dorm = "/mnt/user-data/uploads/Compte_dormant_aout26.xlsx"
-    ca = comptes_actifs(dorm, dt.date(2026, 8, 31))
+    # Démo : fichiers pris dans le dossier de données local (POPPILOT_DONNEES ou
+    # PopPilot/data_local), jamais un chemin Linux figé.
+    _racine = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    _donnees = os.environ.get("POPPILOT_DONNEES") or os.path.join(_racine, "data_local")
+    inv = os.path.join(_donnees, "Rapport_inventaire_depot_Aout2026_Inventaire_depot_script_.xlsx")
+    dorm = os.path.join(_donnees, "Compte_dormant_aout26.xlsx")
+    arrete = dt.date(2026, 8, 31)
+    ca = comptes_actifs(dorm, arrete)
     print("Comptes actifs:", ca["actifs"], "| dormants:", ca["dormants"], "| seuil:", ca["seuil"])
-    tx = transactions_inventaire(inv)
+
+    # Taux lu dans le socle (§42 : saisi, jamais figé). Absent → on n'invente rien :
+    # le rapport BCC veut de toute façon les devises SÉPARÉES, sans conversion.
+    from ingest.taux_change import taux_en_vigueur
+    taux = taux_en_vigueur(arrete)
+    tx = transactions_inventaire(inv, taux_cdf=taux)
     for b in ("versement", "retrait"):
         s = tx[b]
-        print(f"{b}: {s['nb_total']} ops | CDF natif {s['valeur_cdf_native']:,.0f} | "
-              f"USD {s['valeur_usd']:,.0f} → total CDF {s['valeur_totale_cdf']:,.0f}")
+        # Sans taux, `valeur_totale_cdf` vaut None : l'ancien f"{...:,.0f}" levait alors
+        # un TypeError et la démo ne rendait rien. On affiche ce qu'on a — les deux
+        # devises natives, qui sont l'attendu du rapport — et le total seulement s'il existe.
+        total = (f"{s['valeur_totale_cdf']:,.0f}" if s["valeur_totale_cdf"] is not None
+                 else "n/a (aucun taux saisi — devises non converties)")
+        print(f"{b}: {s['nb_total']} ops | CDF natif {s['valeur_cdf_native']:,.0f} "
+              f"({s['nb_cdf']}) | USD {s['valeur_usd']:,.0f} ({s['nb_usd']}) "
+              f"→ total CDF {total}")

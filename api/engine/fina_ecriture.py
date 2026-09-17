@@ -16,6 +16,23 @@ from socle.schema import FaitCredit, get_session
 from engine.fina import _soldes_cdf, _somme_prefixes
 
 
+def _mixte(soldes, *prefixes):
+    """(part actif, part passif) d'un compte MIXTE — le signe décide, COMPTE PAR COMPTE (§40).
+
+    POURQUOI : les comptes 37, 40, 42-47, 53 et 56 vivent des deux côtés du bilan. En
+    prenant leur somme nette et en l'écrivant à l'actif (A) ET au passif (P), on posait
+    le MÊME montant des deux côtés avec des signes opposés : F0a.05 sortait à
+    −1 782 915 519 CDF et F0p.04 à +1 782 915 519. Un actif négatif dans une déclaration
+    BCC n'a aucun sens. On répartit donc compte par compte, comme le fait déjà le bilan
+    (engine/etats_financiers.py) : soldes débiteurs à l'actif, créditeurs au passif.
+    """
+    def concerne(c):
+        return any(str(c).startswith(p) for p in prefixes)
+    actif = sum(v for c, v in soldes.items() if concerne(c) and v > 0)
+    passif = -sum(v for c, v in soldes.items() if concerne(c) and v < 0)
+    return actif, passif
+
+
 def _agr(soldes):
     """Agrégats CDF par ligne FINA. Actif = débiteur (+), passif/produits = créditeur (−→+)."""
     A = lambda *p: _somme_prefixes(soldes, *p)          # actif (débiteur +)
@@ -23,19 +40,35 @@ def _agr(soldes):
     produits = P("70", "71", "72", "73", "74", "76", "77", "78", "79")
     charges = A("60", "61", "62", "63", "64", "65", "66", "67", "68", "69")
     resultat = produits - charges
+
+    # Comptes mixtes : une seule lecture, répartie entre les deux côtés.
+    a53, p53 = _mixte(soldes, "53")
+    a56, p56 = _mixte(soldes, "56")
+    a40, p40 = _mixte(soldes, "40")
+    a42, p42 = _mixte(soldes, "42")
+    a43, p43 = _mixte(soldes, "43")
+    a46, p46 = _mixte(soldes, "46")
+    a47, p47 = _mixte(soldes, "47")
+    # Parts sans case dans le gabarit (56 n'a pas de ligne au passif, 42 pas à l'actif) :
+    # signalées au lieu d'être écrites au mauvais endroit ou perdues sans bruit.
+    mixtes_non_affectes = {k: v for k, v in
+                           {"56 (part passif)": p56, "42 (part actif)": a42}.items()
+                           if abs(v) > 0.5}
+
     return {
         # F0 ACTIF
-        "F0a.03": A("57"), "F0a.04": A("56"), "F0a.05": A("53"), "F0a.06": A("52"),
+        "F0a.03": A("57"), "F0a.04": a56, "F0a.05": a53, "F0a.06": A("52"),
         "F0a.09": A("32"), "F0a.10": A("31"), "F0a.11": A("30"),
         "F0a.13": -A("38"), "F0a.14": A("39"),
-        "F0a.16": A("40"), "F0a.18": A("43"), "F0a.21": A("46"), "F0a.22": A("47"),
+        "F0a.16": a40, "F0a.18": a43, "F0a.21": a46, "F0a.22": a47,
         "F0a.25": A("20"), "F0a.26": A("22"), "F0a.31": A("27"), "F0a.32": A("28"),
         # F0 PASSIF
-        "F0p.04": P("53"), "F0p.06": P("33"), "F0p.07": P("34"), "F0p.09": P("36"),
-        "F0p.12": P("40"), "F0p.13": P("42"), "F0p.14": P("43"), "F0p.17": P("46"),
-        "F0p.18": P("47"), "F0p.22": P("18"),
+        "F0p.04": p53, "F0p.06": P("33"), "F0p.07": P("34"), "F0p.09": P("36"),
+        "F0p.12": p40, "F0p.13": p42, "F0p.14": p43, "F0p.17": p46,
+        "F0p.18": p47, "F0p.22": P("18"),
         "F0p.24": P("14"), "F0p.25": resultat, "F0p.26": P("12"), "F0p.27": P("11"),
         "F0p.28": P("10"),
+        "_F0_mixtes_non_affectes": mixtes_non_affectes,
         # F1 COMPTE DE RÉSULTAT
         "F1.02": P("71"), "F1.03": P("72"), "F1.04": P("73"),
         "F1.05": A("60"), "F1.06": A("61"), "F1.07": A("62"), "F1.08": A("63"),
@@ -102,17 +135,30 @@ def valeurs_fina(date_arrete, db_path="socle/micropop.db", rh=None, ventilation_
     # Montants comptables depuis la balance CDF ; ventilation groupe depuis l'épargne
     P = lambda *p: -_somme_prefixes(soldes, *p)
     ep_33 = P("33"); ep_34 = P("34"); ep_35 = P("35")
-    # part groupe épargne (comptes groupe : 331141 transitoire + 33402 caution) approximée
+    # Part groupe de l'épargne (§51.3). DEUX PIÈGES CORRIGÉS ICI :
+    #
+    # 1. La proportion se calcule sur une base HOMOGÈNE (tout converti en USD).
+    #    En devise d'origine, la somme additionnait des USD et des CDF bruts : le
+    #    dénominateur était dominé par les CDF et la part groupe sortait à 0,02 % au
+    #    lieu de 1,82 % — un facteur 100 sur la ventilation F6, sans alerte.
+    # 2. Une épargne absente ne vaut PAS « 0 % de groupe » : l'ancien `except: prop=0`
+    #    faisait passer une donnée manquante pour une ventilation calculée. On laisse
+    #    la ventilation VIDE et on le signale ; les cases F6 groupe ne sont pas écrites.
+    prop_ep = None
+    ag["_F6_groupe_indisponible"] = None
     try:
         from engine.epargne import synthese_epargne
-        syn = synthese_epargne(date_arrete, db_path=db_path, en_usd=False)
-        # proportion groupe sur l'épargne totale
-        prop_ep = (syn["epargne_groupe"] / syn["encours_total"]) if syn["encours_total"] else 0
-    except Exception:
-        prop_ep = 0
+        syn = synthese_epargne(date_arrete, db_path=db_path, en_usd=True)
+        total_ep = syn["encours_total"]
+        prop_ep = (syn["epargne_groupe"] / total_ep) if total_ep else None
+        if prop_ep is None:
+            ag["_F6_groupe_indisponible"] = "encours épargne nul"
+    except Exception as e:                       # noqa: BLE001 — motif conservé, pas avalé
+        ag["_F6_groupe_indisponible"] = f"{type(e).__name__}: {e}"
+    ag["_F6_part_groupe"] = prop_ep
     ag["F6_33_total"] = ep_33
-    ag["F6_33_groupe"] = ep_33 * prop_ep
-    ag["F6_33_client"] = ep_33 * (1 - prop_ep)
+    ag["F6_33_groupe"] = (ep_33 * prop_ep) if prop_ep is not None else None
+    ag["F6_33_client"] = (ep_33 * (1 - prop_ep)) if prop_ep is not None else None
     ag["F6_34_total"] = ep_34
     ag["F6_35_total"] = ep_35
 
@@ -135,7 +181,61 @@ def valeurs_fina(date_arrete, db_path="socle/micropop.db", rh=None, ventilation_
     ag["F10_services"] = total_f10 * vent.get("services", 0)
     ag["F10_autres"] = total_f10 * vent.get("autres", 0)
     ag["_F10_somme_taux"] = sum(vent.get(k, 0) for k in ("commerce", "agricole", "services", "autres"))
+
+    # ── CONTRÔLE F0 : la somme des lignes écrites = le bilan de la balance CDF ──
+    # Un contrôle n'a de valeur que s'il peut échouer. Ici on confronte DEUX chemins
+    # indépendants : les lignes F0 (mapping case par case, ci-dessus) et le bilan
+    # reconstruit par engine/etats_financiers.py (mapping par préfixe, validé écart nul).
+    # Un compte non repris dans une case F0, ou une case mal affectée, apparaît aussitôt.
+    ag.update(_controle_f0(ag, date_arrete, db_path))
     return ag
+
+
+def _controle_f0(ag, date_arrete, db_path):
+    """Écart entre les lignes F0 et le bilan de la balance CDF (actif et passif)."""
+    from engine.etats_financiers import etats_financiers
+    try:
+        ef = etats_financiers(date_arrete, db_path=db_path, devise="CDF")
+    except Exception as e:                       # noqa: BLE001
+        return {"_F0_controle": f"non calculé ({type(e).__name__}: {e})"}
+    # F0a.13 = provisions sur créances (compte 38). Le gabarit les porte en POSITIF sur
+    # une ligne qui se DÉDUIT de l'actif, alors que le bilan les compte négativement.
+    # Le contrôle doit connaître cette convention, sinon il crie un écart de 2 × 38.
+    DEDUITES = {"F0a.13"}
+    actif_f0 = sum((-v if k in DEDUITES else v) for k, v in ag.items()
+                   if k.startswith("F0a.") and isinstance(v, (int, float)))
+    passif_f0 = sum(v for k, v in ag.items()
+                    if k.startswith("F0p.") and isinstance(v, (int, float)))
+    ecart_a = actif_f0 - ef["total_actif"]
+    ecart_p = passif_f0 - ef["total_passif"]
+    return {
+        "_F0_actif_total": actif_f0, "_F0_passif_total": passif_f0,
+        "_F0_bilan_actif": ef["total_actif"], "_F0_bilan_passif": ef["total_passif"],
+        "_F0_ecart_actif": ecart_a, "_F0_ecart_passif": ecart_p,
+        # tolérance : 1 CDF (le franc congolais n'a pas de subdivision utile ici)
+        "_F0_controle": "ok" if max(abs(ecart_a), abs(ecart_p)) < 1 else "ECART",
+    }
+
+
+def _ecrire(feuille, ligne, colonne, valeur, cases_vides=None, repere=""):
+    """Écrit une valeur dans le gabarit, et NE FAIT RIEN si elle est indisponible (None).
+
+    POURQUOI : `valeurs_fina` met délibérément certaines cases à None quand la donnée
+    manque — la ventilation groupe de F6 quand l'épargne du mois n'est pas chargée (ou
+    quand le taux n'est pas saisi), avec le commentaire « les cases F6 groupe ne sont
+    pas écrites ». Le bloc d'écriture, lui, faisait `round(None, 2)` : TypeError, et le
+    FINA ENTIER était perdu — F0, F1, F5, F11 compris, alors que ces feuilles-là étaient
+    parfaitement calculées. Une case manquante doit coûter une case, pas le rapport.
+
+    Les cases sautées sont collectées : un rapport incomplet doit se DIRE incomplet,
+    sinon on livre un gabarit à trous à la BCC sans le savoir.
+    """
+    if valeur is None:
+        if cases_vides is not None and repere:
+            cases_vides.append(repere)
+        return False
+    feuille.write(ligne, colonne, round(valeur, 2) if isinstance(valeur, float) else valeur)
+    return True
 
 
 def ecrire_fina(date_arrete, gabarit, sortie, db_path="socle/micropop.db", rh=None,
@@ -153,6 +253,7 @@ def ecrire_fina(date_arrete, gabarit, sortie, db_path="socle/micropop.db", rh=No
     ag = valeurs_fina(date_arrete, db_path, rh=rh, ventilation_f10=ventilation_f10)
     rb = xlrd.open_workbook(gabarit, formatting_info=True)
     wb = xl_copy(rb)
+    cases_vides: list[str] = []          # cases laissées vides faute de donnée
 
     def write_by_code(sheet_name, col=2, mapping_key=lambda c: c.replace("V1.", "").strip()):
         sh = rb.sheet_by_name(sheet_name); w = wb.get_sheet(sheet_name)
@@ -197,17 +298,21 @@ def ecrire_fina(date_arrete, gabarit, sortie, db_path="socle/micropop.db", rh=No
                 w11.write(r, 2 + i, round(v, 2))
 
     # F6 : épargne détaillée (33 client/groupe, 34, 35)
+    # La ventilation Client/Groupe vient de l'épargne : elle peut légitimement manquer
+    # (inventaire du mois non chargé, taux non saisi). Les totaux, eux, viennent de la
+    # balance CDF et sont toujours là. On écrit donc ce qu'on a, case par case.
     sh6 = rb.sheet_by_name("F6"); w6 = wb.get_sheet("F6")
     for r in range(sh6.nrows):
         code = str(sh6.cell_value(r, 0)).strip()
         if code == "V1.F6.01":   # (33) épargnes et dépôts ordinaires
-            w6.write(r, 2, round(ag["F6_33_client"], 2))
-            w6.write(r, 3, round(ag["F6_33_groupe"], 2))
-            w6.write(r, 5, round(ag["F6_33_total"], 2))
+            _ecrire(w6, r, 2, ag["F6_33_client"], cases_vides, "F6.01 client (ventilation groupe)")
+            _ecrire(w6, r, 3, ag["F6_33_groupe"], cases_vides, "F6.01 groupe (ventilation groupe)")
+            _ecrire(w6, r, 5, ag["F6_33_total"], cases_vides, "F6.01 total")
         elif code == "V1.F6.08":  # (34) dépôts à terme
-            w6.write(r, 2, round(ag["F6_34_total"], 2)); w6.write(r, 5, round(ag["F6_34_total"], 2))
+            _ecrire(w6, r, 2, ag["F6_34_total"], cases_vides, "F6.08")
+            _ecrire(w6, r, 5, ag["F6_34_total"], cases_vides, "F6.08 total")
         elif code == "V1.F6.10":  # (35) dépôts régime spécial
-            w6.write(r, 5, round(ag["F6_35_total"], 2))
+            _ecrire(w6, r, 5, ag["F6_35_total"], cases_vides, "F6.10 total")
 
     # F7 : comptes Nostri
     sh7 = rb.sheet_by_name("F7"); w7 = wb.get_sheet("F7")
@@ -231,13 +336,22 @@ def ecrire_fina(date_arrete, gabarit, sortie, db_path="socle/micropop.db", rh=No
             w10.write(r, 6, round(ag["F10_total_encours"], 2))
 
     wb.save(sortie)
+    # `complet` répond à la seule question qui compte avant d'envoyer à la BCC :
+    # est-ce que toutes les cases calculables ont été remplies ? Un fichier à trous
+    # produit sans un mot est le pire des deux mondes.
     return {"sortie": sortie, "resultat_net": ag["_resultat"],
             "F5_total": ag["F5_total"], "nb_emprunteurs": ag["F2b.01"],
-            "nb_epargnants": ag["F2b.03"]}
+            "nb_epargnants": ag["F2b.03"],
+            "complet": not cases_vides,
+            "cases_vides": cases_vides,
+            "motif_cases_vides": ag.get("_F6_groupe_indisponible")}
 
 
 if __name__ == "__main__":
-    r = ecrire_fina(dt.date(2026, 7, 31),
-                    "/mnt/user-data/uploads/MFII0043m072026.xls",
-                    "/tmp/FINA_juillet_genere.xls")
+    # Démo : chemins relatifs au dossier de données local, pas à un /mnt ou /tmp Linux.
+    import os
+    import tempfile
+    gabarit = os.environ.get("FINA_GABARIT", "MFII0043m072026.xls")
+    sortie = os.path.join(tempfile.gettempdir(), "FINA_juillet_genere.xls")
+    r = ecrire_fina(dt.date(2026, 7, 31), gabarit, sortie)
     print("Généré:", r)

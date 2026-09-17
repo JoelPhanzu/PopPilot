@@ -80,7 +80,9 @@ CREATE TABLE fait_balance (
 	solde_net FLOAT, 
 	devise VARCHAR, 
 	PRIMARY KEY (id), 
-	CONSTRAINT uq_balance_arrete_compte UNIQUE (date_arrete, numero_compte)
+	-- La DEVISE fait partie de la clé : la balance USD (bilan, indicateurs, budget)
+	-- et la balance CDF (FINA) du même arrêté coexistent sans jamais s'écraser.
+	CONSTRAINT uq_balance_arrete_compte_devise UNIQUE (date_arrete, numero_compte, devise)
 );
 
 CREATE TABLE fait_budget (

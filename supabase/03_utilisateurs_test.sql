@@ -1,24 +1,35 @@
 -- ============================================================
--- PopPilot — Utilisateurs de test
+-- PopPilot — Utilisateurs : liaison Supabase Auth <-> table utilisateur
 -- ============================================================
--- IMPORTANT : les comptes de connexion (email + mot de passe) se créent d'abord
--- dans Supabase → Authentication → Users (bouton "Add user"), OU via l'API d'auth.
--- Ensuite, on lie chaque compte auth à une ligne de la table utilisateur ci-dessous,
--- en renseignant auth_uid = l'UUID du compte créé dans Authentication.
+-- ⚠️ NE PLUS EXÉCUTER CE FICHIER À LA MAIN. Il est conservé comme référence
+-- de la correspondance en vigueur ; la liaison se fait par :
 --
--- Étapes :
--- 1. Créer 4 users dans Authentication (ex. dg@poppilot.cd, cdg@poppilot.cd,
---    victoire@poppilot.cd, audit@poppilot.cd) avec un mot de passe chacun.
--- 2. Copier l'UUID de chacun (colonne "UID" dans la liste des users).
--- 3. Remplacer les <UUID_...> ci-dessous par les vrais UUID, puis exécuter.
-
-INSERT INTO utilisateur (login, nom_complet, role, agence, actif, date_creation, mot_de_passe_hash, sel, auth_uid)
-VALUES
- ('dg',       'Directeur Général Adjoint', 'DIRECTION', NULL,                 true, CURRENT_DATE, 'supabase', 'supabase', '<UUID_DG>'),
- ('cdg',      'Contrôleur de gestion',     'CDG',       NULL,                 true, CURRENT_DATE, 'supabase', 'supabase', '<UUID_CDG>'),
- ('victoire', 'Responsable Victoire',      'AGENCE',    'AGENCE DE VICTOIRE', true, CURRENT_DATE, 'supabase', 'supabase', '<UUID_VICTOIRE>'),
- ('audit',    'Auditeur interne',          'AUDIT',     NULL,                 true, CURRENT_DATE, 'supabase', 'supabase', '<UUID_AUDIT>')
-ON CONFLICT (login) DO UPDATE
-  SET role = EXCLUDED.role, agence = EXCLUDED.agence, auth_uid = EXCLUDED.auth_uid;
--- Note : mot_de_passe_hash/sel ne servent plus (l'auth est gérée par Supabase),
--- mais restent NOT NULL dans le schéma → on met une valeur neutre.
+--     python api/lier_utilisateurs.py
+--
+-- POURQUOI : les UUID de auth.users changent dès qu'un compte est supprimé puis
+-- recréé dans Authentication > Users. Les coller ici les figerait et la liaison
+-- casserait silencieusement (l'utilisateur obtiendrait un 401 sans explication).
+-- Le script relit les UUID dans auth.users à chaque exécution : il est idempotent
+-- et se répare tout seul.
+--
+-- Pour ajouter/retirer quelqu'un : modifier le dictionnaire CORRESPONDANCE en tête
+-- de api/lier_utilisateurs.py, puis relancer le script.
+--
+-- Correspondance en vigueur (comptes créés dans Authentication > Users) :
+--
+--   daf@poppilot.com         -> daf         DIRECTION  toutes agences   (+ import)
+--   cdg@poppilot.com         -> cdg         CDG        toutes agences   (+ import)
+--   bmvictoire@poppilot.com  -> bmvictoire  AGENCE     AGENCE DE VICTOIRE
+--   audit@poppilot.com       -> audit       AUDIT      toutes agences   (lecture)
+--
+-- Rôles valides (api/socle/auth.py) : DIRECTION, CDG, AGENCE, AUDIT.
+--   - DIRECTION / CDG / AUDIT : voient toutes les agences (pp_acces_total).
+--   - AGENCE : cloisonné à la valeur de la colonne `agence`, qui doit correspondre
+--     EXACTEMENT au libellé du registre api/socle/agences.py (ex. 'AGENCE DE VICTOIRE').
+--   - Écriture (import, calculs) réservée à DIRECTION / CDG.
+--
+-- mot_de_passe_hash / sel restent NOT NULL dans le schéma mais ne servent plus :
+-- l'authentification est entièrement déléguée à Supabase Auth.
+--
+-- Contrôle après liaison :  python api/verifier_supabase.py
+-- Contrôle du cloisonnement : supabase/04_verifier_cloisonnement.sql

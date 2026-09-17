@@ -16,33 +16,55 @@ from socle.schema import DimAgence, get_session, init_db
 ACTIVE, FERMEE, SUSPENDUE = "ACTIVE", "FERMEE", "SUSPENDUE"
 
 
-def enregistrer_agence(session, code, *, nom=None, region=None, statut=ACTIVE,
-                       date_ouverture=None, date_fermeture=None, motif=None):
+# Marqueur « ce champ n'a pas été fourni », à ne pas confondre avec « ce champ vaut None ».
+# Indispensable ici : rouvrir une agence doit pouvoir REMETTRE date_fermeture à None,
+# ce qu'un simple `if valeur is not None` empêcherait.
+_INCHANGE = object()
+
+
+def enregistrer_agence(session, code, *, nom=_INCHANGE, region=_INCHANGE, statut=_INCHANGE,
+                       date_ouverture=_INCHANGE, date_fermeture=_INCHANGE, motif=_INCHANGE):
+    """Crée une agence, ou met à jour UNIQUEMENT LES CHAMPS FOURNIS.
+
+    POURQUOI cette précaution : c'était auparavant un upsert intégral, qui réécrivait
+    les six champs à leur valeur par défaut à chaque appel. Comme `fermer_agence` ne
+    passe que le statut, la date et le motif, fermer une agence EFFAÇAIT son nom, sa
+    région et sa date d'ouverture :
+
+        AVANT fermeture : Goma | Nord-Kivu | 2015-03-01
+        APRES fermeture : AGENCE DE GOMA | None | None
+
+    Le portefeuille d'une agence fermée reste déclarable à la BCC (note métier Goma) :
+    perdre son référentiel au moment précis où on la ferme est le pire moment. Même
+    effet sur `seed_agences`, qui remettait date_ouverture à None à chaque exécution.
+    """
     a = session.execute(select(DimAgence).where(DimAgence.code_agence == code)).scalar_one_or_none()
     if a is None:
-        a = DimAgence(code_agence=code)
+        # À la création seulement, des valeurs de départ : le nom vaut le code tant
+        # qu'aucun libellé n'est donné, et une agence naît ACTIVE.
+        a = DimAgence(code_agence=code, nom=code, statut=ACTIVE)
         session.add(a)
-    a.nom = nom or code
-    a.region = region
-    a.statut = statut
-    a.date_ouverture = date_ouverture
-    a.date_fermeture = date_fermeture
-    a.motif = motif
+    for champ, valeur in (("nom", nom), ("region", region), ("statut", statut),
+                          ("date_ouverture", date_ouverture),
+                          ("date_fermeture", date_fermeture), ("motif", motif)):
+        if valeur is not _INCHANGE:
+            setattr(a, champ, valeur)
     session.commit()
     return a
 
 
 def fermer_agence(session, code, date_fermeture: dt.date, motif=""):
-    enregistrer_agence(session, code, statut=FERMEE, date_fermeture=date_fermeture, motif=motif)
+    """Ferme une agence SANS toucher à son référentiel (nom, région, date d'ouverture)."""
+    return enregistrer_agence(session, code, statut=FERMEE,
+                              date_fermeture=date_fermeture, motif=motif)
 
 
 def rouvrir_agence(session, code):
+    """Réouvre une agence existante. Ne crée rien : rouvrir l'inexistant n'a pas de sens."""
     a = session.execute(select(DimAgence).where(DimAgence.code_agence == code)).scalar_one_or_none()
-    if a:
-        a.statut = ACTIVE
-        a.date_fermeture = None
-        a.motif = None
-        session.commit()
+    if a is None:
+        return None
+    return enregistrer_agence(session, code, statut=ACTIVE, date_fermeture=None, motif=None)
 
 
 def agences_fermees(session) -> set[str]:

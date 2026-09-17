@@ -18,15 +18,24 @@ def synthese_epargne(date_arrete: dt.date, db_path="socle/micropop.db",
                      en_usd=True) -> dict:
     """Synthèse épargne. Si en_usd, convertit le CDF en USD au taux de clôture (total homogène)."""
     from engine.etats_financiers import taux_change
+    # try/finally OBLIGATOIRE : `taux_change` LÈVE quand aucun taux n'est saisi (§42) —
+    # un cas normal, pas une panne. Le `s.close()` placé après l'appel n'était donc
+    # jamais atteint et la session restait ouverte. Sous Windows le fichier SQLite
+    # restait verrouillé ; sous Supabase c'est une connexion du pool (pool_size=5) qui
+    # ne revient pas, à chaque calcul sur un mois dont le taux n'est pas encore saisi.
+    # La fuite était invisible : les appelants enveloppent cet appel dans un
+    # `except Exception` qui n'en retient que le motif.
     s = get_session(db_path)
-    taux = taux_change(s, date_arrete) if en_usd else 1.0
-    rows = s.execute(
-        select(FaitEpargne.type_depot, FaitEpargne.devise, FaitEpargne.est_groupe,
-               func.count(), func.sum(FaitEpargne.solde_actuel))
-        .where(FaitEpargne.date_arrete == date_arrete)
-        .group_by(FaitEpargne.type_depot, FaitEpargne.devise, FaitEpargne.est_groupe)
-    ).all()
-    s.close()
+    try:
+        taux = taux_change(s, date_arrete) if en_usd else 1.0
+        rows = s.execute(
+            select(FaitEpargne.type_depot, FaitEpargne.devise, FaitEpargne.est_groupe,
+                   func.count(), func.sum(FaitEpargne.solde_actuel))
+            .where(FaitEpargne.date_arrete == date_arrete)
+            .group_by(FaitEpargne.type_depot, FaitEpargne.devise, FaitEpargne.est_groupe)
+        ).all()
+    finally:
+        s.close()
     if not rows:
         raise ValueError(f"Aucune épargne pour {date_arrete}.")
 
@@ -70,11 +79,13 @@ def synthese_epargne(date_arrete: dt.date, db_path="socle/micropop.db",
 def nb_epargnants(date_arrete: dt.date, db_path="socle/micropop.db") -> int:
     """Nombre d'épargnants = clients distincts avec au moins un compte."""
     s = get_session(db_path)
-    n = s.execute(
-        select(func.count(func.distinct(FaitEpargne.id_client)))
-        .where(FaitEpargne.date_arrete == date_arrete)
-    ).scalar_one()
-    s.close()
+    try:
+        n = s.execute(
+            select(func.count(func.distinct(FaitEpargne.id_client)))
+            .where(FaitEpargne.date_arrete == date_arrete)
+        ).scalar_one()
+    finally:
+        s.close()
     return n
 
 

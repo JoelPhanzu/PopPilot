@@ -13,7 +13,7 @@ SQLAlchemy comme ORM → migration PostgreSQL (Phase 6) indolore.
 from __future__ import annotations
 
 from sqlalchemy import (
-    Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String,
+    Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Uuid,
     UniqueConstraint, Index, create_engine,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -163,7 +163,14 @@ class FaitEpargne(Base):
 # DOMAINE 3 — COMPTABILITÉ
 # ─────────────────────────────────────────────────────────────────────────────
 class FaitBalance(Base):
-    """Compte × arrêté. Source balance USD → fichier magique (§38)."""
+    """Compte × arrêté × DEVISE. Source balance SAGE (§38).
+
+    LA DEVISE FAIT PARTIE DE LA CLÉ. Deux balances du même arrêté coexistent : la
+    balance USD (bilan, indicateurs, budget) et la balance CDF (FINA, §32-37). Sans
+    la devise dans la contrainte, importer la balance CDF écrasait la balance USD du
+    même arrêté, et le bilan « USD » sortait alors des montants en CDF (facteur ~2268)
+    sans le moindre message. Toute lecture doit donc préciser la devise attendue.
+    """
     __tablename__ = "fait_balance"
     id = Column(Integer, primary_key=True)
     date_arrete = Column(Date, nullable=False)
@@ -177,7 +184,8 @@ class FaitBalance(Base):
     solde_net = Column(Float)                           # devise d'origine
     devise = Column(String, default="USD")
     __table_args__ = (
-        UniqueConstraint("date_arrete", "numero_compte", name="uq_balance_arrete_compte"),
+        UniqueConstraint("date_arrete", "numero_compte", "devise",
+                         name="uq_balance_arrete_compte_devise"),
         Index("ix_balance_arrete", "date_arrete"),
     )
 
@@ -450,6 +458,15 @@ class Utilisateur(Base):
     actif = Column(Boolean, default=True)
     date_creation = Column(Date)
     derniere_connexion = Column(DateTime)
+    # Lien vers le compte Supabase (auth.users.id). Pose par supabase/02_auth_rls.sql.
+    # C'est la cle utilisee par api/auth_supabase.py pour identifier l'appelant a
+    # partir du "sub" de son jeton JWT. Uuid() -> uuid natif sur PostgreSQL,
+    # CHAR(32) sur le repli SQLite local.
+    # UNIQUE : deux lignes portant le meme auth_uid rendraient pp_role() non
+    # deterministe (SELECT ... LIMIT 1 sans ORDER BY cote base) -> le role retenu
+    # serait tire au hasard, y compris un DIRECTION face a un AGENCE. Faille
+    # silencieuse : on l'interdit au niveau du schema.
+    auth_uid = Column(Uuid(as_uuid=False), unique=True, index=True)
 
 
 class MappingBudget(Base):
@@ -494,26 +511,140 @@ class ParamMappingFina(Base):
 # FABRIQUE
 # ─────────────────────────────────────────────────────────────────────────────
 import os as _os
+from pathlib import Path as _Path
 
-def get_engine(db_path: str = "socle/micropop.db"):
-    """Connexion à la base.
-    - Si la variable d'environnement DATABASE_URL est définie (ex. Supabase PostgreSQL),
-      on l'utilise → production.
-    - Sinon, repli sur SQLite local (tests, développement hors ligne).
-    Aucune donnée n'est perdue : les moteurs métier sont inchangés, seule la cible DB varie.
+
+def _charger_env():
+    """Charge api/.env (DATABASE_URL, SUPABASE_JWT_SECRET) s'il existe.
+
+    POURQUOI : sans cela, DATABASE_URL reste vide et TOUTE la plateforme bascule
+    silencieusement sur le repli SQLite local (base vide) -> les rapports sortiraient
+    des chiffres faux sans le moindre message. Le .env est ignore par git (.gitignore).
+    Les variables deja presentes dans l'environnement gagnent (override=False).
     """
+    env = _Path(__file__).resolve().parent.parent / ".env"   # api/.env
+    if not env.exists():
+        return
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(env, override=False)
+    except ImportError:                      # repli sans python-dotenv
+        for ligne in env.read_text(encoding="utf-8").splitlines():
+            ligne = ligne.strip()
+            if not ligne or ligne.startswith("#") or "=" not in ligne:
+                continue
+            cle, _, val = ligne.partition("=")
+            _os.environ.setdefault(cle.strip(), val.strip().strip('"').strip("'"))
+
+
+_charger_env()
+
+
+# Marqueurs du fichier .env.example : s'ils sont encore la, le .env n'a pas ete rempli.
+_GABARITS = ("[MOT_DE_PASSE]", "[TON_JWT_SECRET_SUPABASE]", "<MOT_DE_PASSE>")
+
+
+def env_encore_gabarit() -> str | None:
+    """Renvoie un message si api/.env contient encore les valeurs a remplacer.
+
+    Sans ce controle, une URL restee au gabarit produit une erreur DNS incomprehensible
+    (« failed to resolve host ») au lieu de dire simplement : le .env n'est pas rempli.
+    """
+    for cle in ("DATABASE_URL", "SUPABASE_JWT_SECRET"):
+        valeur = _os.environ.get(cle) or ""
+        for marqueur in _GABARITS:
+            if marqueur in valeur:
+                return (f"{cle} contient encore {marqueur} : api/.env n'a pas ete complete "
+                        "(Supabase > Project Settings > Database / API).")
+    return None
+
+
+def cible_base() -> str:
+    """Decrit la base visee, SANS jamais exposer le mot de passe (pour les logs)."""
     url = _os.environ.get("DATABASE_URL")
-    if url:
-        # normaliser le préfixe pour SQLAlchemy + psycopg (Supabase)
-        if url.startswith("postgres://"):
-            url = url.replace("postgres://", "postgresql+psycopg://", 1)
-        elif url.startswith("postgresql://"):
-            url = url.replace("postgresql://", "postgresql+psycopg://", 1)
-        return create_engine(url, future=True, pool_pre_ping=True)
-    return create_engine(f"sqlite:///{db_path}", future=True)
+    if not url:
+        return "SQLite local (repli) - DATABASE_URL non definie"
+    if any(m in url for m in _GABARITS):
+        return "api/.env NON COMPLETE (valeurs du gabarit encore presentes)"
+    hote = url.split("@")[-1].split("/")[0] if "@" in url else "?"
+    return f"PostgreSQL/Supabase ({hote})"
 
 
-def init_db(db_path: str = "socle/micropop.db"):
+BASE_PAR_DEFAUT = "socle/micropop.db"
+
+
+def _url_cible(db_path: str) -> str:
+    """URL SQLAlchemy visée.
+
+    RÈGLE DE SÉCURITÉ — quelle base pour quel appel :
+      - db_path laissé au défaut (« la base de la plateforme ») → Supabase si
+        DATABASE_URL est définie, sinon SQLite local. C'est le cas de l'API et des
+        moteurs appelés sans préciser de base.
+      - db_path EXPLICITE et différent du défaut (ex. « socle/test_phase1.db ») →
+        TOUJOURS ce fichier SQLite, jamais Supabase.
+
+    POURQUOI : sans cette distinction, DATABASE_URL écrasait le db_path des tests.
+    Résultat : dès que api/.env pointait sur la production, lancer la campagne de
+    validation importait les jeux de test DANS LA BASE SUPABASE DE PRODUCTION
+    (importer_credit purge puis réécrit une date d'arrêté). Une base nommée
+    explicitement doit rester locale.
+    """
+    if db_path and db_path != BASE_PAR_DEFAUT:
+        return f"sqlite:///{db_path}"
+    url = _os.environ.get("DATABASE_URL")
+    if not url:
+        return f"sqlite:///{db_path}"
+    # normaliser le préfixe pour SQLAlchemy + psycopg (Supabase)
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+psycopg://", 1)
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+psycopg://", 1)
+    return url
+
+
+# Un moteur SQLAlchemy porte un POOL de connexions. En créer un par appel ouvrirait
+# un nouveau pool à CHAQUE requête de l'API (auth_supabase appelle get_session à chaque
+# fois) → épuisement des connexions PostgreSQL de Supabase sous charge. On les met donc
+# en cache par URL cible. Clé = l'URL, pas le db_path : ainsi un basculement de
+# DATABASE_URL (tests) donne bien un moteur distinct.
+_moteurs: dict[str, object] = {}
+
+
+def get_engine(db_path: str = BASE_PAR_DEFAUT):
+    """Connexion à la base (moteur mis en cache, un seul pool par cible).
+    - DATABASE_URL définie (ex. Supabase PostgreSQL) → production.
+    - Sinon, repli sur SQLite local (tests, développement hors ligne).
+    Les moteurs métier sont inchangés : seule la cible DB varie.
+    """
+    url = _url_cible(db_path)
+    moteur = _moteurs.get(url)
+    if moteur is None:
+        if url.startswith("sqlite"):
+            moteur = create_engine(url, future=True)
+        else:
+            # pool_pre_ping : Supabase ferme les connexions inactives ; on vérifie
+            # qu'une connexion recyclée est encore vivante avant de s'en servir.
+            moteur = create_engine(url, future=True, pool_pre_ping=True,
+                                   pool_size=5, max_overflow=5, pool_recycle=1800)
+        _moteurs[url] = moteur
+    return moteur
+
+
+def fermer_moteurs() -> None:
+    """Ferme tous les pools et vide le cache.
+
+    Indispensable aux tests sous Windows : tant qu'un moteur SQLite garde le fichier
+    ouvert, os.remove() lève PermissionError (WinError 32) et le test s'interrompt.
+    """
+    for moteur in _moteurs.values():
+        try:
+            moteur.dispose()
+        except Exception:
+            pass
+    _moteurs.clear()
+
+
+def init_db(db_path: str = BASE_PAR_DEFAUT):
     """Crée les tables. En production (Supabase), le schéma est déjà posé via SQL :
     create_all n'écrase rien (idempotent). Utile surtout en SQLite local."""
     engine = get_engine(db_path)
@@ -521,7 +652,7 @@ def init_db(db_path: str = "socle/micropop.db"):
     return engine
 
 
-def get_session(db_path: str = "socle/micropop.db"):
+def get_session(db_path: str = BASE_PAR_DEFAUT):
     engine = get_engine(db_path)
     return sessionmaker(bind=engine, future=True)()
 

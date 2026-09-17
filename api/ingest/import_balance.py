@@ -39,7 +39,9 @@ def importer_balance(path, date_arrete: dt.date, *, feuille="Balance",
     if not hdr or "compte" not in str(hdr[0]).lower():
         raise ValueError(f"En-tête inattendu (col1={hdr[0]!r}) — balance requise.")
 
-    purges = H.purge_snapshot(s, "balance", date_arrete)
+    # Purge limitée à la devise importée : la balance CDF (FINA) et la balance USD
+    # (bilan, indicateurs, budget) du même arrêté cohabitent et ne s'écrasent jamais.
+    purges = H.purge_snapshot(s, "balance", date_arrete, devise=devise)
     acceptees = 0
     for row in ws.iter_rows(min_row=2, values_only=True):
         compte = row[0]
@@ -64,10 +66,11 @@ def importer_balance(path, date_arrete: dt.date, *, feuille="Balance",
         acceptees += 1
     H.enregistrer_import(s, domaine="balance", fichier=os.path.basename(path),
                          date_snapshot=date_snapshot, date_arrete=date_arrete,
-                         acceptees=acceptees, rejetees=0, message=f"purge {purges}")
+                         acceptees=acceptees, rejetees=0,
+                         message=f"devise {devise}, purge {purges}")
     s.commit()
     s.close()
-    return {"acceptees": acceptees, "purges": purges}
+    return {"acceptees": acceptees, "purges": purges, "devise": devise}
 
 
 if __name__ == "__main__":

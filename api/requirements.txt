@@ -4,6 +4,11 @@ sqlalchemy>=2.0
 psycopg[binary]>=3.1
 openpyxl>=3.1
 xlrd==2.0.1
+# Écriture du gabarit BCC au format .xls (engine/fina_ecriture.py) : openpyxl ne sait
+# pas écrire du .xls, et le gabarit MFII de la BCC n'existe qu'en .xls.
+xlutils>=2.0
+xlwt>=1.3
 pandas>=2.0
 python-multipart>=0.0.9
 PyJWT>=2.8
+python-dotenv>=1.0

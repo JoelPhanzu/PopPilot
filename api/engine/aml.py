@@ -48,9 +48,15 @@ def operations_especes(path_xlsx, taux_cdf):
                 if s: res["retrait"][s][0] += 1; res["retrait"][s][1] += usd
     return res
 
-def transferts_grand_livre(path_xlsx, taux_cdf=1.0):
+def transferts_grand_livre(path_xlsx, taux_cdf):
     """Transferts (GL 330/331/332, libellé transfert). Montant = débit OU crédit (col 5/6).
-    RÈGLE (CDG) : le grand livre est TOUJOURS en USD → conversion systématique en CDF au taux."""
+
+    RÈGLE (CDG) : le grand livre est TOUJOURS en USD → conversion systématique en CDF.
+    `taux_cdf` est obligatoire : un taux par défaut de 1.0 laissait passer des USD pour
+    des CDF (facteur ~2268) dans un rapport réglementaire.
+    """
+    if not taux_cdf:
+        raise ValueError("Taux USD→CDF requis pour les transferts du grand livre.")
     wb = openpyxl.load_workbook(path_xlsx, read_only=True, data_only=True)
     if "Grand Livre" not in wb.sheetnames:
         return {"nombre": 0, "volume_cdf": 0.0, "volume_usd": 0.0}
@@ -66,24 +72,40 @@ def transferts_grand_livre(path_xlsx, taux_cdf=1.0):
             vol_usd += abs(montant)
     return {"nombre": nb, "volume_usd": vol_usd, "volume_cdf": vol_usd * taux_cdf}
 
-def portefeuille_client(path_inventaire, taux_cdf=2263.57):
+def portefeuille_client(path_inventaire, taux_cdf):
     """Portefeuille client depuis l'inventaire dépôt. Soldes en CDF (USD converti au taux).
+
     Statut juridique : 1 = personne physique, 2 = personne morale, 4 = groupe (INCLUS).
-    Solde = colonne solde_fin (index 23). Devise par compte (col 4) : USD → CDF."""
-    wb = openpyxl.load_workbook(path_inventaire, read_only=True, data_only=True)
-    ws = wb.worksheets[0]
+
+    LECTURE PAR NOM DE COLONNE (solde_fin, devise, montant_depot…), jamais par position :
+    l'inventaire du CBS change de gabarit d'un mois à l'autre (une colonne « Mois année »
+    s'intercale et décale tout). Les positions écrites en dur faisaient lire le solde de
+    fin à la place d'un retrait, sans la moindre erreur visible.
+
+    `taux_cdf` est OBLIGATOIRE (§42 : le taux est saisi, jamais figé).
+    """
+    from ingest.import_epargne import lignes_inventaire, verifier_colonnes
+    if not taux_cdf:
+        raise ValueError("Taux USD→CDF requis pour le portefeuille client (aucune valeur par défaut).")
     pp_clients, pm_clients, grp_clients = set(), set(), set()
     pp_solde = pm_solde = grp_solde = 0.0
     loc = {}
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        statut = str(row[17] or "").strip()
-        id_client = row[5]
-        devise = str(row[4] or "").strip().upper()
-        solde_fin = _f(row[23])                          # colonne solde_fin
+    agences_sans_province = set()      # une agence nouvelle ne doit pas disparaître en silence
+    premiere = True
+    for row in lignes_inventaire(path_inventaire):
+        if premiere:
+            verifier_colonnes(row)
+            premiere = False
+        statut = str(row.get("statut_juridique") or "").strip()
+        id_client = row.get("id_client")
+        devise = str(row.get("devise") or "").strip().upper()
+        solde_fin = _f(row.get("solde_fin"))
         # conversion en CDF selon la devise du compte
         solde_cdf = solde_fin * taux_cdf if devise == "USD" else solde_fin
-        agence = str(row[24] or "").strip().upper()
+        agence = str(row.get("libelle_niveau") or "").strip().upper()
         prov = AGENCE_PROVINCE.get(agence, "AUTRE")
+        if prov == "AUTRE" and agence:
+            agences_sans_province.add(agence)
         if statut == "1":
             pp_clients.add(id_client); pp_solde += solde_cdf
         elif statut == "2":
@@ -92,8 +114,8 @@ def portefeuille_client(path_inventaire, taux_cdf=2263.57):
             grp_clients.add(id_client); grp_solde += solde_cdf
         # Localisation = OPÉRATIONS (dépôts + retraits) par province, en CDF.
         # Chaque mouvement > 0 = 1 opération (dépôt ET retrait sur la ligne = 2 opérations).
-        depot = _f(row[21])      # montant_depot
-        retrait = _f(row[22])    # montant_retrait
+        depot = _f(row.get("montant_depot"))
+        retrait = _f(row.get("montant_retrait"))
         if devise == "USD":
             depot *= taux_cdf; retrait *= taux_cdf
         l = loc.setdefault(prov, [0, 0.0])
@@ -108,4 +130,8 @@ def portefeuille_client(path_inventaire, taux_cdf=2263.57):
         "clients_total": len(pp_clients) + len(pm_clients) + len(grp_clients),
         "solde_total": pp_solde + pm_solde + grp_solde,
         "localisation": {k: {"nombre": v[0], "volume": v[1]} for k, v in loc.items()},
+        # agences absentes de AGENCE_PROVINCE : leurs opérations tombent dans « AUTRE »
+        # et ne sont écrites nulle part dans la section 7. À compléter, pas à ignorer.
+        "agences_sans_province": sorted(agences_sans_province),
+        "taux_cdf": taux_cdf,
     }

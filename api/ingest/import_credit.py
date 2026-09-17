@@ -56,12 +56,19 @@ def _to_int(v):
 
 
 def _ouvrir(path):
-    """Ouvre .xlsx ; si .xls trompeur (en réalité xlsx), copie et rouvre (règle I-1)."""
+    """Ouvre .xlsx ; si .xls trompeur (en réalité xlsx), copie et rouvre (règle I-1).
+
+    La copie passe par le dossier temporaire DU SYSTÈME (tempfile) : « /tmp » n'existe
+    pas sous Windows, l'import échouait donc sur toute extraction en .xls déguisé —
+    ce qui est le cas de l'extraction crédit mensuelle.
+    """
     try:
         return openpyxl.load_workbook(path, read_only=True, data_only=True)
     except Exception:
-        tmp = "/tmp/_reopen.xlsx"
         import shutil
+        import tempfile
+        fd, tmp = tempfile.mkstemp(suffix=".xlsx", prefix="poppilot_")
+        os.close(fd)
         shutil.copy(path, tmp)
         return openpyxl.load_workbook(tmp, read_only=True, data_only=True)
 

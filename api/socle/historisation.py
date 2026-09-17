@@ -30,13 +30,22 @@ DOMAINES = {
 }
 
 
-def purge_snapshot(session, domaine: str, date_arrete: dt.date) -> int:
-    """Supprime le snapshot existant (idempotence, règle I-4). Renvoie le nb de lignes purgées."""
+def purge_snapshot(session, domaine: str, date_arrete: dt.date, *, devise: str | None = None) -> int:
+    """Supprime le snapshot existant (idempotence, règle I-4). Renvoie le nb de lignes purgées.
+
+    `devise` restreint la purge à une seule devise. INDISPENSABLE pour la balance :
+    un même arrêté porte la balance USD (bilan, indicateurs) ET la balance CDF (FINA).
+    Purger sans distinguer la devise supprimait l'une en important l'autre, et le bilan
+    « USD » se retrouvait alimenté par des montants CDF, sans erreur visible.
+    """
     table = DOMAINES[domaine]
+    conditions = [table.date_arrete == date_arrete]
+    if devise is not None:
+        conditions.append(table.devise == devise)
     n = session.execute(
-        select(func.count()).select_from(table).where(table.date_arrete == date_arrete)
+        select(func.count()).select_from(table).where(*conditions)
     ).scalar_one()
-    session.execute(delete(table).where(table.date_arrete == date_arrete))
+    session.execute(delete(table).where(*conditions))
     return n
 
 

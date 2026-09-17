@@ -1,6 +1,7 @@
 # Secrets — NE JAMAIS committer
 .env
-.env.local
+.env.*
+!.env.example
 *.key
 
 # Données sources et bases locales (données clients : hors dépôt)

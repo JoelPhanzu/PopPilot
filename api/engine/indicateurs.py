@@ -11,14 +11,14 @@ import datetime as dt
 
 from sqlalchemy import select, func
 
-from socle.schema import FaitBalance, get_session
-from engine.etats_financiers import etats_financiers
+from socle.schema import get_session
+from engine.etats_financiers import etats_financiers, soldes_balance
 
 
-def _soldes_par_compte(session, date_arrete):
-    rows = session.execute(
-        select(FaitBalance).where(FaitBalance.date_arrete == date_arrete)
-    ).scalars().all()
+def _soldes_par_compte(session, date_arrete, devise="USD"):
+    """Soldes de la balance de la devise demandée (USD : source de vérité des ratios).
+    Ne jamais lire sans devise : la balance CDF du FINA partage le même arrêté."""
+    rows = soldes_balance(session, date_arrete, devise)
     return {r.numero_compte: (r.solde_net or 0.0) for r in rows}
 
 
@@ -47,6 +47,26 @@ def _par_depuis_credit(date_arrete_compta, db_path):
             "meme_mois": (d_credit.month == m and d_credit.year == y),
             "par1": r["global"].par1, "par30": r["global"].par30,
             "par90": r["global"].par90, "encours": r["global"].encours}
+
+
+def _nb_agents_au_roster(session, date_arrete):
+    """Nombre d'agents de crédit au roster EN VIGUEUR à l'arrêté (une seule version).
+
+    Le comptage précédent portait sur toute la table dim_employe, sans filtre de date :
+    invisible avec un seul roster chargé, il DOUBLAIT dès le deuxième mois importé
+    (chaque import ajoute une version datée). B2 aurait été divisé par deux, puis par
+    trois, au fil des mois — une dérive lente, donc difficile à repérer.
+    """
+    from socle.schema import DimEmploye
+    effet = session.execute(
+        select(func.max(DimEmploye.date_debut)).where(DimEmploye.date_debut <= date_arrete)
+    ).scalar_one_or_none()
+    if effet is None:
+        return None
+    return session.execute(
+        select(func.count()).select_from(DimEmploye)
+        .where(DimEmploye.fonction == "agent_credit", DimEmploye.date_debut == effet)
+    ).scalar_one()
 
 
 def _agregats_bilan(soldes, ef):
@@ -95,6 +115,10 @@ def indicateurs_prudentiels(date_arrete, date_debut_exercice=None, db_path="socl
     fonds_propres_moyens = fonds_propres_base
     actif_moyen = total_actif
     moyennes_dispo = False
+    # Les échecs ci-dessous étaient avalés par `except: pass` : le ROE se calculait
+    # alors sur une valeur PONCTUELLE au lieu d'une moyenne de période, sans que
+    # personne ne puisse le savoir. On garde le motif et on le publie.
+    moyennes_motif = None
     try:
         s2 = get_session(db_path)
         soldes0 = _soldes_par_compte(s2, date_debut_exercice)
@@ -106,8 +130,11 @@ def indicateurs_prudentiels(date_arrete, date_debut_exercice=None, db_path="socl
             fonds_propres_moyens = (fonds_propres_base + ag0["fonds_propres_base"]) / 2
             actif_moyen = (total_actif + ag0["total_actif"]) / 2
             moyennes_dispo = True
-    except Exception:
-        pass
+        else:
+            moyennes_motif = (f"aucune balance au {date_debut_exercice} : ratios calculés "
+                              "sur les soldes de l'arrêté, pas sur une moyenne de période")
+    except Exception as e:                       # noqa: BLE001 — motif conservé
+        moyennes_motif = f"{type(e).__name__}: {e}"
 
     par_credit = _par_depuis_credit(date_arrete, db_path)
     par1 = par_credit["par1"] if par_credit else capital_retard_39
@@ -115,30 +142,29 @@ def indicateurs_prudentiels(date_arrete, date_debut_exercice=None, db_path="socl
 
     # ── Dépôts à vue depuis l'épargne (pour liquidité E4) ──
     depots_a_vue = None
+    depots_a_vue_motif = None
     try:
         from engine.epargne import synthese_epargne
         syn = synthese_epargne(date_arrete, db_path=db_path)
         depots_a_vue = syn["depots_a_vue"]
-    except Exception:
-        pass
+    except Exception as e:                       # noqa: BLE001 — motif conservé
+        depots_a_vue_motif = f"{type(e).__name__}: {e}"
 
     # ── B2 emprunteurs/agent : emprunteurs actifs (crédit) ÷ agents actifs (roster) ──
     nb_emprunteurs = nb_agents = None
+    b2_motif = None
     try:
-        from socle.schema import FaitCredit, DimEmploye
+        from socle.schema import FaitCredit
         s3 = get_session(db_path)
         if par_credit:
             nb_emprunteurs = s3.execute(
                 select(func.count(func.distinct(FaitCredit.numero_client)))
                 .where(FaitCredit.date_arrete == par_credit["date_credit"])
             ).scalar_one()
-        nb_agents = s3.execute(
-            select(func.count()).select_from(DimEmploye)
-            .where(DimEmploye.fonction == "agent_credit")
-        ).scalar_one()
+        nb_agents = _nb_agents_au_roster(s3, date_arrete)
         s3.close()
-    except Exception:
-        pass
+    except Exception as e:                       # noqa: BLE001 — motif conservé
+        b2_motif = f"{type(e).__name__}: {e}"
 
     def ratio(num, den):
         if not den or num is None:
@@ -151,8 +177,14 @@ def indicateurs_prudentiels(date_arrete, date_debut_exercice=None, db_path="socl
     ind["A1bis_PAR1"] = {"valeur": ratio(par1, portefeuille_brut), "num": par1,
                          "den": portefeuille_brut, "norme": "(risque global)",
                          "source": "crédit Phase 1"}
-    ind["A2_abandon"] = {"valeur": ratio(0.0, portefeuille_moyen), "num": 0.0,
-                         "den": portefeuille_moyen, "norme": "< 2 %"}
+    # A2 : abandons de créances = radiations (≥361 j) prononcées à la clôture annuelle.
+    # Le moteur de radiation n'existe pas encore → la valeur est INCONNUE, pas nulle.
+    # Un 0,00 % affiché « conforme » faisait passer un indicateur non calculé pour un
+    # indicateur excellent : c'est le pire des deux mondes devant la BCC.
+    ind["A2_abandon"] = {"valeur": None, "num": None, "den": portefeuille_moyen,
+                         "norme": "< 2 %",
+                         "motif": "radiations (≥361 j au 31/12) non encore calculées "
+                                  "— voir clôture annuelle"}
     ind["B1_efficacite"] = {"valeur": ratio(charges_personnel, portefeuille_moyen),
                             "num": charges_personnel, "den": portefeuille_moyen, "norme": "13-21 %"}
     # B2 : emprunteurs actifs ÷ agents — SANS ×100 (§28 B.2)
@@ -185,10 +217,32 @@ def indicateurs_prudentiels(date_arrete, date_debut_exercice=None, db_path="socl
     ind["E5_couverture_immob"] = {"valeur": ratio(immob_nettes, fonds_propres_prudentiels),
                                   "num": immob_nettes, "den": fonds_propres_prudentiels,
                                   "norme": "≤ 50 %"}
+    # E6 : il manquait purement et simplement, alors que le dossier annonce « 17/17
+    # indicateurs ». Le déclarer non calculé vaut mieux que le compter sans l'avoir.
+    ind["E6_couverture_emplois_MLT"] = {
+        "valeur": None, "num": None, "den": None, "norme": "≥ 100 %",
+        "motif": "ressources et emplois > 1 an non distingués (crédit MLT / DAT) "
+                 "— catalogue IP-E6"}
+
+    # Motifs de non-calcul : ce qui n'a pas pu être fait doit se voir dans le résultat,
+    # pas se deviner. Sans cela, un ratio sur soldes ponctuels passe pour une moyenne.
+    avertissements = {k: v for k, v in {
+        "moyennes_de_periode": moyennes_motif,
+        "depots_a_vue": depots_a_vue_motif,
+        "B2_roster": b2_motif,
+        "PAR": None if par_credit else "aucun snapshot crédit : PAR1 replié sur le compte 39",
+        "PAR_mois_different": (None if not par_credit or par_credit["meme_mois"]
+                               else f"PAR calculé sur l'extraction crédit du "
+                                    f"{par_credit['date_credit']}, pas du mois de la balance"),
+    }.items() if v}
 
     return {
         "date_arrete": date_arrete, "par_credit": par_credit,
+        "moyennes_de_periode": moyennes_dispo,
+        "date_debut_exercice": date_debut_exercice,
+        "avertissements": avertissements,
         "agregats": {
+            "nb_agents_roster": nb_agents, "nb_emprunteurs": nb_emprunteurs,
             "portefeuille_brut": portefeuille_brut, "PAR1_credit": par1, "PAR30_credit": par30,
             "capital_retard_bilan_39": capital_retard_39, "immob_nettes": immob_nettes,
             "depots_cautionnements_27": depots_cautionnements_27, "disponibles_56_57": disponibles,

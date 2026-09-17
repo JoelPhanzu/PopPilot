@@ -10,8 +10,9 @@ Portage du « fichier magique » : balance → bilan + compte de résultat norma
 from __future__ import annotations
 
 import datetime as dt
+import warnings as _warnings
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from socle.schema import FaitBalance, ParamMappingCompte, ParamTauxChange, get_session
 
@@ -84,25 +85,86 @@ def prefixe(compte: str) -> str:
     return str(compte).strip()[:2]
 
 
+def filtre_devise(devise: str):
+    """Condition SQL « balance de CETTE devise ».
+
+    La devise fait partie de la clé de fait_balance : un arrêté porte la balance USD
+    (bilan, indicateurs, budget) ET la balance CDF (FINA). Toute lecture doit donc
+    choisir la sienne, sinon les deux s'additionnent et le total n'a plus de sens.
+    Les lignes anciennes sans devise sont traitées comme des USD (la balance USD est
+    la seule qui existait avant l'ajout de la devise à la clé).
+    """
+    if devise == "USD":
+        return or_(FaitBalance.devise == "USD", FaitBalance.devise.is_(None))
+    return FaitBalance.devise == devise
+
+
+def soldes_balance(session, date_arrete: dt.date, devise: str = "USD") -> list:
+    """Lignes de balance de l'arrêté, dans la devise demandée (jamais un mélange)."""
+    return session.execute(
+        select(FaitBalance).where(FaitBalance.date_arrete == date_arrete,
+                                  filtre_devise(devise))
+    ).scalars().all()
+
+
 def taux_change(session, date_arrete: dt.date) -> float:
-    t = session.execute(
-        select(ParamTauxChange.taux)
+    """Taux USD->CDF en vigueur a l'arrete (le plus recent a date d'effet <= arrete).
+
+    DEUX GARDE-FOUS, parce que les deux echecs etaient SILENCIEUX :
+
+    1. Taux absent -> on LEVE. L'ancien `return t or 1.0` convertissait les USD en
+       CDF au taux 1:1 : un bilan faux d'un facteur ~2268, publiable sans qu'aucune
+       alerte ne se declenche. La doctrine (§42) est que le taux est saisi et jamais
+       figé ; un defaut de 1.0 est precisement un taux figé, et le pire qui soit.
+
+    2. Taux perime -> on AVERTIT. Le taux de cloture BCC change chaque mois. Rien
+       n'empechait un arrete de decembre d'utiliser le taux d'aout : le calcul passe,
+       les montants sont faux de quelques dixiemes de pour cent, et l'ecart ne se voit
+       qu'au rapprochement. On ne bloque pas (un taux peut legitimement valoir pour
+       plusieurs mois), mais ca ne passe plus inapercu.
+    """
+    ligne = session.execute(
+        select(ParamTauxChange.date_effet, ParamTauxChange.taux)
         .where(ParamTauxChange.date_effet <= date_arrete)
         .order_by(ParamTauxChange.date_effet.desc())
-    ).scalars().first()
-    return t or 1.0
+    ).first()
+    if ligne is None:
+        raise ValueError(
+            f"Aucun taux de change USD->CDF en vigueur au {date_arrete}. "
+            f"Le saisir avant tout calcul en CDF : "
+            f"ingest.taux_change.saisir_taux(date_effet, taux).")
+    date_effet, taux = ligne
+    if (date_effet.year, date_effet.month) != (date_arrete.year, date_arrete.month):
+        _warnings.warn(
+            f"Taux de change perime : arrete {date_arrete} calcule avec le taux du "
+            f"{date_effet} ({taux}). Saisir le taux du mois pour un montant CDF exact.",
+            stacklevel=2)
+    return taux
 
 
-def etats_financiers(date_arrete: dt.date, db_path="socle/micropop.db") -> dict:
-    """Construit bilan (par rubrique) + compte de résultat + contrôles, USD & CDF."""
+def etats_financiers(date_arrete: dt.date, db_path="socle/micropop.db",
+                     devise="USD") -> dict:
+    """Construit bilan (par rubrique) + compte de résultat + contrôles, USD & CDF.
+
+    `devise` = devise de la balance lue (USD par défaut : les montants USD sont la
+    source de vérité, §43). La balance CDF du même arrêté, réservée au FINA, n'est
+    jamais mélangée à celle-ci.
+    """
     s = get_session(db_path)
-    taux = taux_change(s, date_arrete)
-    comptes = s.execute(
-        select(FaitBalance).where(FaitBalance.date_arrete == date_arrete)
-    ).scalars().all()
+    # Le taux ne sert qu'aux montants CDF dérivés. Son absence ne doit PAS empêcher un
+    # bilan en USD : elle bloquait en réalité les moyennes de période (le 31/12
+    # précédent n'a pas toujours de taux saisi), et les ratios ROE/ROA/B1/C3 retombaient
+    # alors sur les soldes du seul arrêté — silencieusement. On dégrade la seule chose
+    # qui dépend du taux (les montants CDF), et on le dit.
+    try:
+        taux = taux_change(s, date_arrete)
+        taux_absent = None
+    except ValueError as e:
+        taux, taux_absent = None, str(e)
+    comptes = soldes_balance(s, date_arrete, devise)
     s.close()
     if not comptes:
-        raise ValueError(f"Aucune balance pour l'arrêté {date_arrete}. Importer d'abord.")
+        raise ValueError(f"Aucune balance {devise} pour l'arrêté {date_arrete}. Importer d'abord.")
 
     # Le solde net (col Solde Net USD) : négatif = solde créditeur, positif = débiteur (convention
     # du fichier magique). Actif = débiteurs, Passif/Résultat produits = créditeurs.
@@ -140,15 +202,37 @@ def etats_financiers(date_arrete: dt.date, db_path="socle/micropop.db") -> dict:
 
     total_actif = sum(actif.values())
     total_passif_hors_resultat = sum(passif.values())
-    resultat_net = produits - charges
+    # ATTENTION AU NOM : produits - charges est le resultat COMPTABLE, avant impot.
+    # La doctrine (§67) veut : resultat net = comptable - IBP, avec
+    # IBP = (comptable + reintegrations) x taux, calcule A L'ARRETE ANNUEL.
+    # Ce moteur ne deduit AUCUN impot : en cours d'annee c'est correct (le compte 13
+    # vaut 0, resultat FINA F1 valide contre le gabarit), mais au 31/12 la valeur
+    # ci-dessous reste un resultat AVANT impot. On l'expose sous les deux noms pour
+    # que personne ne prenne l'un pour l'autre, et on signale le cas au 31/12.
+    resultat_comptable = produits - charges
+    resultat_net = resultat_comptable
     # le résultat vient équilibrer le passif
     total_passif = total_passif_hors_resultat + resultat_net
+
+    # Au 31/12, un resultat presente comme "net" sans IBP est faux (et surevalue le
+    # ROE/ROA qui le consomment). Tant que le moteur IBP n'existe pas, on le dit.
+    ibp_du = (date_arrete.month, date_arrete.day) == (12, 31)
+    if ibp_du:
+        _warnings.warn(
+            f"Arrete annuel {date_arrete} : 'resultat_net' est le resultat COMPTABLE "
+            f"avant impot. L'IBP (§67) n'est pas deduit — grille de reintegrations "
+            f"DAF non fournie. Les ratios ROE/ROA en decoulant sont surevalues.",
+            stacklevel=2)
 
     controles = {
         "bilan_equilibre_ecart": total_actif - total_passif,
         "resultat_net": resultat_net,
+        "resultat_comptable": resultat_comptable,
+        "ibp_deduit": False,
+        "ibp_du_a_cet_arrete": ibp_du,
         "comptes_non_mappes": len(non_mappes),
         "fonds_propres": passif.get("Fonds propres", 0.0) + resultat_net,
+        "taux_absent": taux_absent,          # None si le taux du mois est bien saisi
     }
 
     return {
@@ -156,7 +240,9 @@ def etats_financiers(date_arrete: dt.date, db_path="socle/micropop.db") -> dict:
         "actif": actif, "passif": passif,
         "total_actif": total_actif, "total_passif": total_passif,
         "produits": produits, "charges": charges, "resultat_net": resultat_net,
-        "resultat_net_cdf": resultat_net * taux,
+        "resultat_comptable": resultat_comptable,
+        # pas de taux saisi → pas de montant CDF du tout (jamais un taux figé, §42)
+        "resultat_net_cdf": (resultat_net * taux) if taux else None,
         "controles": controles,
         "comptes_non_mappes": non_mappes,
         "par_prefixe": par_prefixe,
