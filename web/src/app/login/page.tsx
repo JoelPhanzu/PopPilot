@@ -10,7 +10,12 @@ import { redirect } from "next/navigation";
 import { Logo, Signature } from "@/composants/Logo";
 import { FormulaireConnexion } from "./FormulaireConnexion";
 import { entrerEnDemonstration } from "./actions";
-import { configurationAFaire, modeDemoAutorise, supabaseConfigure } from "@/lib/config";
+import {
+  avertissementConfiguration,
+  configurationAFaire,
+  modeDemoAutorise,
+  supabaseConfigure,
+} from "@/lib/config";
 import { sessionCourante } from "@/lib/session";
 import { LIBELLES_ROLE, ROLES } from "@/lib/roles";
 
@@ -37,6 +42,7 @@ export default async function PageConnexion({
   if (profil !== null) redirect(apres);
 
   const aConfigurer = configurationAFaire();
+  const aCorriger = avertissementConfiguration();
   const demo = modeDemoAutorise();
 
   return (
@@ -67,6 +73,14 @@ export default async function PageConnexion({
               <span className="font-semibold">Supabase n&apos;est pas configure.</span>
               <br />
               {aConfigurer}
+            </p>
+          )}
+
+          {aCorriger !== null && (
+            <p className="mb-5 rounded-lg border border-pop-alerte/30 bg-pop-alerte/5 px-3.5 py-3 text-xs leading-relaxed text-pop-alerte">
+              <span className="font-semibold">Configuration a corriger.</span>
+              <br />
+              {aCorriger}
             </p>
           )}
 

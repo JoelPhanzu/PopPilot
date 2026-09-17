@@ -29,9 +29,18 @@ des que Supabase est configure et n'existe jamais en production.
 
 | Variable | Role |
 |---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | URL du projet Supabase |
+| `NEXT_PUBLIC_SUPABASE_URL` | URL **racine** du projet Supabase, sans chemin ni slash final (voir ci-dessous) |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Cle **anonyme** (jamais `service_role` dans le front) |
 | `NEXT_PUBLIC_POPPILOT_API` | API FastAPI (defaut `http://localhost:8000`) |
+
+> **Piege courant.** `NEXT_PUBLIC_SUPABASE_URL` doit etre l'URL RACINE
+> (`https://xxxx.supabase.co`), pas l'URL REST copiee depuis la console
+> (`https://xxxx.supabase.co/rest/v1/`). supabase-js ajoute lui-meme le chemin
+> de chaque service ; avec `/rest/v1` deja dans la variable, la connexion part
+> vers `/rest/v1/auth/v1/token` et Supabase repond
+> **« Invalid path specified in request URL »**. Le front ramene desormais la
+> valeur a son origine et affiche un avertissement sur `/login` tant que
+> `.env.local` n'est pas corrige.
 
 ## Ecrans
 
