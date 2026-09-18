@@ -90,3 +90,20 @@ export function poids(octets: number): string {
   if (octets < 1024 * 1024) return `${(octets / 1024).toFixed(0)} Ko`;
   return `${(octets / (1024 * 1024)).toFixed(1)} Mo`;
 }
+
+/**
+ * Etat du formulaire d'import, pour `useActionState`.
+ *
+ * Il vit ICI et non dans `app/import/actions.ts` : un fichier « use server »
+ * ne peut exporter QUE des fonctions asynchrones — chacun de ses exports
+ * devient un point d'entree appelable depuis le navigateur. Y laisser une
+ * simple constante fait echouer le module entier au chargement, avec
+ * « A ‹use server› file can only export async functions, found object ».
+ */
+export type EtatImport =
+  | { etat: "vierge" }
+  | { etat: "succes"; resultat: ResultatImport }
+  | { etat: "echec"; message: string; statut: number | null };
+
+/** Etat de depart : aucun import tente. */
+export const ETAT_INITIAL: EtatImport = { etat: "vierge" };

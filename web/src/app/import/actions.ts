@@ -17,14 +17,13 @@ import { revalidatePath } from "next/cache";
 import { sessionCourante } from "@/lib/session";
 import { peutEcrire } from "@/lib/roles";
 import { televerserApi } from "@/lib/api";
-import type { ResultatImport } from "@/lib/import";
+import type { EtatImport, ResultatImport } from "@/lib/import";
 
-export type EtatImport =
-  | { etat: "vierge" }
-  | { etat: "succes"; resultat: ResultatImport }
-  | { etat: "echec"; message: string; statut: number | null };
-
-export const ETAT_INITIAL: EtatImport = { etat: "vierge" };
+// L'etat du formulaire (type + valeur initiale) est declare dans
+// `@/lib/import` : ce fichier est en « use server », et un tel module ne peut
+// exporter que des fonctions asynchrones — chaque export y devient une action
+// appelable depuis le navigateur. Une constante exportee ici casse le module
+// au chargement (« can only export async functions, found object »).
 
 /** Champs que l'API accepte (cf. DOMAINES dans api/import_cbs.py). */
 const CHAMPS = ["date_arrete", "date_effet", "feuille", "devise", "exercice", "hypothese"] as const;

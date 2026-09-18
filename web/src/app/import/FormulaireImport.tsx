@@ -12,12 +12,13 @@ import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 import {
   AIDES_CHAMP,
+  ETAT_INITIAL,
   LIBELLES_CHAMP,
   poids,
   typeDeChamp,
   type DomaineImport,
 } from "@/lib/import";
-import { importerFichier, ETAT_INITIAL } from "./actions";
+import { importerFichier } from "./actions";
 
 function BoutonEnvoyer({ libelle }: { libelle: string }) {
   const { pending } = useFormStatus();
