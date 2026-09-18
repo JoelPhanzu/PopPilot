@@ -40,6 +40,20 @@ export const CLE_ANON_SUPABASE = nettoyer(process.env.NEXT_PUBLIC_SUPABASE_ANON_
 export const URL_API = nettoyer(process.env.NEXT_PUBLIC_POPPILOT_API) || "http://localhost:8000";
 
 /**
+ * Delai d'attente des appels a l'API, en millisecondes (defaut 30 s).
+ *
+ * Les moteurs calculent sur la base Supabase distante : le PAR se parcourt
+ * pret par pret, et le temps de reponse suit la taille du portefeuille. Il n'y
+ * a donc pas de bonne valeur universelle — d'ou la variable. Une valeur
+ * illisible ou nulle retombe sur le defaut plutot que de produire un
+ * `AbortSignal.timeout(NaN)`, qui couperait l'appel immediatement.
+ */
+export const DELAI_API_MS: number = (() => {
+  const brut = Number(nettoyer(process.env.NEXT_PUBLIC_POPPILOT_API_TIMEOUT_MS));
+  return Number.isFinite(brut) && brut > 0 ? brut : 30_000;
+})();
+
+/**
  * Ce qui a ete retire de l'URL, s'il y avait quelque chose en trop.
  * Sert a le DIRE au lieu de corriger en silence : la prochaine personne qui
  * ouvre .env.local doit y trouver une valeur juste, pas un front qui rattrape.

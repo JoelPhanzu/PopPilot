@@ -10,7 +10,7 @@ import "server-only";
  * (cf. `restreindreAUneAgence`), et elle est explicite.
  */
 import { appelerApi } from "@/lib/api";
-import { ARRETE_DEMO, parDemo, provisionsDemo } from "@/lib/demo";
+import { parDemo, provisionsDemo } from "@/lib/demo";
 import { aAccesTotal, filtrerParAgence, type Profil } from "@/lib/roles";
 
 /** Une ligne « agence » telle que la renvoie GET /par. */
@@ -175,5 +175,16 @@ export async function chargerTableauCredit(
   };
 }
 
-/** Arrete par defaut : celui documente dans le guide (GET /par?arrete=2026-05-30). */
-export const ARRETE_PAR_DEFAUT = ARRETE_DEMO;
+/**
+ * Arrete affiche quand l'URL n'en precise aucun.
+ *
+ * Il ne suit PAS `ARRETE_DEMO` : la date d'illustration du mode demonstration
+ * et la date reellement chargee dans le socle sont deux choses differentes, et
+ * les confondre faisait atterrir le tableau de bord sur un arrete absent — 404
+ * « Aucun pret pour l'arrete » a chaque ouverture.
+ *
+ * Valeur calee sur ce que contient la base : l'extraction de mai 2026 y est
+ * rangee au 2026-05-31 (7 984 prets). A corriger le jour ou un arrete plus
+ * recent devient la reference.
+ */
+export const ARRETE_PAR_DEFAUT = "2026-05-31";

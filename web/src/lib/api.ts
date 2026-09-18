@@ -11,14 +11,35 @@ import "server-only";
  * `cache: "no-store"` : un chiffre de pilotage ne se sert jamais tiede. Deux
  * arretes differents doivent donner deux appels.
  */
-import { URL_API } from "@/lib/config";
+import { DELAI_API_MS, URL_API } from "@/lib/config";
 
 export type Resultat<T> =
   | { ok: true; donnees: T }
   | { ok: false; statut: number | null; erreur: string };
 
-/** Delai au-dela duquel on n'attend plus l'API (elle n'est peut-etre pas lancee). */
-const DELAI_MS = 8000;
+/**
+ * Distingue « l'API n'a pas fini a temps » de « l'API n'est pas la ».
+ *
+ * Les deux remontaient le meme message, qui disait de lancer l'API. Conseil
+ * inutile quand elle tourne et calcule : on envoyait chercher une panne qui
+ * n'existait pas, au lieu de parler du delai.
+ */
+function messageDindisponibilite(e: unknown, chemin: string): string {
+  const expire =
+    e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
+  if (expire) {
+    return (
+      `L'API n'a pas repondu en ${Math.round(DELAI_API_MS / 1000)} s ` +
+      `(${URL_API}${chemin}). Le calcul est peut-etre simplement plus long que ce ` +
+      "delai : l'augmenter avec NEXT_PUBLIC_POPPILOT_API_TIMEOUT_MS dans web/.env.local."
+    );
+  }
+  const cause = e instanceof Error ? e.message : String(e);
+  return (
+    `API injoignable (${URL_API}) : ${cause}. ` +
+    "Lancer l'API : cd api && uvicorn main:app --reload"
+  );
+}
 
 export async function appelerApi<T>(
   chemin: string,
@@ -29,7 +50,7 @@ export async function appelerApi<T>(
   }
 
   const url = `${URL_API.replace(/\/+$/, "")}${chemin}`;
-  const signal = AbortSignal.timeout(DELAI_MS);
+  const signal = AbortSignal.timeout(DELAI_API_MS);
 
   let reponse: Response;
   try {
@@ -39,13 +60,7 @@ export async function appelerApi<T>(
       signal,
     });
   } catch (e) {
-    const cause = e instanceof Error ? e.message : String(e);
-    return {
-      ok: false,
-      statut: null,
-      erreur: `API injoignable (${URL_API}) : ${cause}. ` +
-        "Lancer l'API : cd api && uvicorn main:app --reload",
-    };
+    return { ok: false, statut: null, erreur: messageDindisponibilite(e, chemin) };
   }
 
   if (!reponse.ok) {
@@ -74,10 +89,10 @@ export async function appelerApi<T>(
  * c'est un choix de TOPOLOGIE, pas un detail : ouvrir l'API au navigateur
  * economiserait un saut mais exposerait l'API elle-meme.
  *
- * Aucun `AbortSignal.timeout` ici : un inventaire epargne (~170 000 comptes)
- * met une quinzaine de secondes a etre INGERE apres l'envoi. Couper au bout
- * de huit secondes laisserait l'import se terminer cote API pendant que
- * l'ecran annonce un echec — le pire des deux mondes.
+ * Aucun `AbortSignal.timeout` ici, contrairement aux lectures : un inventaire
+ * epargne (~170 000 comptes) met une quinzaine de secondes a etre INGERE apres
+ * l'envoi. Couper laisserait l'import se terminer cote API pendant que l'ecran
+ * annonce un echec — le pire des deux mondes.
  */
 export async function televerserApi<T>(
   chemin: string,
@@ -100,13 +115,7 @@ export async function televerserApi<T>(
       cache: "no-store",
     });
   } catch (e) {
-    const cause = e instanceof Error ? e.message : String(e);
-    return {
-      ok: false,
-      statut: null,
-      erreur: `API injoignable (${URL_API}) : ${cause}. ` +
-        "Lancer l'API : cd api && uvicorn main:app --reload",
-    };
+    return { ok: false, statut: null, erreur: messageDindisponibilite(e, chemin) };
   }
 
   if (!reponse.ok) {
