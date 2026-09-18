@@ -49,6 +49,24 @@ des que Supabase est configure et n'existe jamais en production.
 | `/` | Redirige vers `/credit` (connecte) ou `/login` |
 | `/login` | Connexion Supabase Auth + mode demonstration |
 | `/credit` | Encours, PAR1 / PAR30 / PAR90, provisions, PAR30 par agence (graphique + tableau) |
+| `/import` | Chargement des fichiers du CBS dans le socle + journal des imports (DIRECTION / CDG) |
+
+### `/import` — charger les extractions du CBS
+
+Le formulaire est **construit a partir de `GET /import/domaines`** : domaines,
+extensions acceptees, champs obligatoires et facultatifs viennent de l'API. Il n'y
+a donc pas deux listes a garder en phase — ajouter un domaine cote moteur le fait
+apparaitre a l'ecran. Si l'API ne repond pas, aucun formulaire n'est affiche :
+mieux vaut aucun envoi qu'un envoi qui n'arrivera nulle part.
+
+Le fichier passe par le **serveur Next** (action serveur), jamais directement du
+navigateur a l'API : l'API n'a donc pas besoin d'etre joignable depuis
+l'internet. C'est ce qui impose `serverActions.bodySizeLimit` dans
+`next.config.ts` (220 Mo), a tenir coherent avec `POPPILOT_IMPORT_MAX_MO` cote
+API (200 Mo par defaut). Un inventaire epargne fait ~170 000 comptes.
+
+Re-importer le meme arrete **remplace** le chargement precedent (idempotence du
+socle) : l'ecran annonce combien de lignes ont ete remplacees.
 
 ## Cloisonnement par role
 
@@ -75,7 +93,8 @@ src/
 │   ├── layout.tsx           # charte, typographie systeme
 │   ├── page.tsx             # redirection
 │   ├── login/               # ecran de connexion + actions serveur
-│   └── credit/              # tableau de bord credit
+│   ├── credit/              # tableau de bord credit
+│   └── import/              # import des fichiers du CBS (page, formulaire, action)
 ├── composants/              # coquille, cartes, graphique, tableau, contexte de session
 ├── lib/
 │   ├── config.ts            # env + detection du gabarit [A_REMPLIR]
@@ -83,6 +102,8 @@ src/
 │   ├── session.ts           # profil courant (serveur)
 │   ├── api.ts               # appel de l'API FastAPI
 │   ├── credit.ts            # types /par et /provisions
+│   ├── import.ts            # types et libelles du domaine import (client)
+│   ├── import-serveur.ts    # appels /import/domaines et /imports (serveur)
 │   ├── demo.ts              # donnees d'illustration (mode demonstration)
 │   ├── format.ts            # montants, taux, dates (fr-FR)
 │   └── supabase/            # clients navigateur et serveur

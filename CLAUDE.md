@@ -360,8 +360,35 @@ streamlit run bench/app.py          # tableau de bord visuel
   `build`/`dev` sur un poste sans accès à fonts.gstatic.com → pile de polices système.
 - Lancer : `cd web && npm install && cp .env.example .env.local` (remplir les `[A_REMPLIR]`)
   puis `npm run dev`. Doc : `web/README.md`.
-- Reste : pages compta/indicateurs, épargne, budget, rapports réglementaires, import CBS,
+- ✅ **Import CBS** : page `/import` (voir la section « Import des fichiers du CBS »).
+- Reste : pages compta/indicateurs, épargne, budget, rapports réglementaires,
   export Excel ; puis déploiement Hostinger.
+
+## Import des fichiers du CBS depuis le web (`api/import_cbs.py`)
+- **`POST /import/{domaine}`** (multipart) — domaines : `credit`, `balance`, `epargne`,
+  `objectifs`, `budget`. N'écrit aucun calcul : le fichier est confié tel quel à
+  `ingest/importer_*`. Idempotent (purge du snapshot de la date d'arrêté, règle I-4) ;
+  la réponse renvoie `purges` = ce qui vient d'être remplacé.
+- **`GET /import/domaines`** : catalogue (extensions, paramètres requis/optionnels). Le
+  formulaire du front est CONSTRUIT à partir de cette réponse → une seule liste à tenir,
+  côté moteur. **`GET /imports`** : journal (import_log) — ce que la base contient vraiment.
+- **Rôles** : `ROLES_ECRITURE = {DIRECTION, CDG}` dans `auth_supabase.py` (miroir de
+  `roles.ts`). ⚠️ **L'AUDIT est dans ROLES_ACCES_TOTAL mais PAS dans ROLES_ECRITURE** :
+  il lit tout, il n'alimente rien — un contrôleur ne remplit pas ce qu'il contrôle.
+- Garde-fous propres au web : nom de fichier assaini (pas de traversée de chemin), taille
+  plafonnée (`POPPILOT_IMPORT_MAX_MO`, 200 Mo) écrite **par morceaux**, extension vérifiée,
+  **paramètre hors domaine REFUSÉ en 422** (un `devise=CDF` envoyé au crédit serait ignoré
+  en silence et l'opérateur croirait avoir chargé du CDF), fichier illisible → **400** (le
+  gestionnaire ValueError global de `main.py` en ferait un 404 « arrêté inexistant »),
+  `api/.env` au gabarit → **503** plutôt qu'un import atterri dans le SQLite local.
+- Endpoint **synchrone** (`def`) : l'ingestion bloque ~15 s pour l'épargne ; en `async def`
+  elle figerait la boucle d'événements et l'API entière resterait muette.
+- Tests : `python tests/test_import_api.py` — 12 cas (rôles, idempotence, traversée de
+  chemin, 400/422/413/503, journal). Inscrits dans `lancer_tous.py`.
+- Front : page `/import` (`web/src/app/import/`), réservée DIRECTION/CDG. Le fichier passe
+  par le serveur Next (action serveur) → `serverActions.bodySizeLimit: 220mb` dans
+  `next.config.ts`, à garder cohérent avec le plafond de l'API. Choix de topologie assumé :
+  l'API n'a pas besoin d'être joignable depuis le navigateur.
 
 ## Vérification des jetons Supabase — DEUX régimes (ne jamais figer HS256)
 - Les projets Supabase récents signent les jetons avec des **clés de signature asymétriques**

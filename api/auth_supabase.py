@@ -33,6 +33,13 @@ from socle.schema import Utilisateur, get_session
 
 ROLES_ACCES_TOTAL = {"DIRECTION", "CDG", "AUDIT"}
 
+# Rôles autorisés à ÉCRIRE dans le socle (import des fichiers du CBS).
+# L'AUDIT a un accès total en LECTURE ; cela ne lui donne pas le droit d'alimenter la
+# base. Confondre les deux ensembles ouvrirait l'import à un rôle de contrôle, qui doit
+# précisément rester extérieur à ce qu'il contrôle.
+# Miroir exact de ROLES_ECRITURE dans web/src/lib/roles.ts.
+ROLES_ECRITURE = {"DIRECTION", "CDG"}
+
 # Algorithmes à clé PUBLIQUE, utilisés par Supabase depuis les « JWT signing keys »
 # (clé ECC P-256 → ES256 par défaut sur les projets récents).
 ALGOS_ASYMETRIQUES = {"ES256", "ES384", "ES512",

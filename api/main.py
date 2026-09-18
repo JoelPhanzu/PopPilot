@@ -27,6 +27,7 @@ from engine.epargne import synthese_epargne, nb_epargnants
 
 from auth_supabase import (utilisateur_courant, filtrer_par_agence,
                            exiger_role, ROLES_ACCES_TOTAL)
+from import_cbs import routeur as routeur_import
 
 @asynccontextmanager
 async def _cycle_de_vie(_app: FastAPI):
@@ -63,6 +64,10 @@ app = FastAPI(title="PopPilot API", version="1.0",
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
+
+# Import des fichiers du CBS depuis le web (POST /import/{domaine}, GET /imports).
+# Endpoints définis dans import_cbs.py : ils exposent ingest/ sans en réécrire un calcul.
+app.include_router(routeur_import)
 
 
 @app.exception_handler(ValueError)

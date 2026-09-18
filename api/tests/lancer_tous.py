@@ -29,6 +29,7 @@ import donnees_test as D  # noqa: E402
 SUITES = [
     ("test_socle.py",              "Phase 0 - socle"),
     ("test_securite_api.py",       "Securite API (cloisonnement agence)"),
+    ("test_import_api.py",         "Import CBS depuis le web (POST /import)"),
     ("test_phase1_par.py",         "Phase 1 - credit"),
     ("test_phase2_compta.py",      "Phase 2 - comptabilite"),
     ("test_phase3_indicateurs.py", "Phase 3 - indicateurs"),

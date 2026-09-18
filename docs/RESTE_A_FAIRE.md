@@ -54,7 +54,11 @@ Construire le budget prévisionnel complet, feuille par feuille :
 
 ### 6. Assemblage plateforme (EN COURS — c'est ce qu'on attaque)
 - Interface unifiée qui relie tous les moteurs : import → calcul → rapports.
-- Streamlit existant (bench crédit) à étendre aux autres domaines.
+- ✅ **Import depuis le web** : `POST /import/{domaine}` (api/import_cbs.py) + page `/import`
+  du front Next.js. Crédit, balance, épargne, objectifs, budget. Réservé DIRECTION/CDG,
+  idempotent, journal des imports (`GET /imports`). Tests : `tests/test_import_api.py`.
+- Reste côté front : pages compta/indicateurs, épargne, budget, rapports réglementaires,
+  export Excel.
 - Orchestration : un mois = importer les sources → générer tous les rapports.
 
 ## PRINCIPES DIRECTEURS (rappel)
