@@ -42,6 +42,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from pydantic.fields import FieldInfo
 from openpyxl.utils.exceptions import InvalidFileException
 from sqlalchemy import select
 
@@ -51,6 +52,7 @@ from ingest.import_balance import importer_balance
 from ingest.import_budget import importer_budget
 from ingest.import_credit import importer_credit
 from ingest.import_epargne import importer_epargne
+from ingest.import_budget import importer_mapping_budget
 from ingest.import_objectifs import importer_objectifs
 
 from auth_supabase import (ROLES_ACCES_TOTAL, ROLES_ECRITURE, exiger_role,
@@ -107,6 +109,19 @@ DOMAINES: dict[str, Domaine] = {
         aide="Double source : liste des agents (détection des orphelins) et leurs objectifs. "
              "Versionné à date d'effet : le roster de mai ne vaut que pour mai.",
     ),
+    "budget_mapping": Domaine(
+        libelle="Mapping budgétaire (fichier de SUIVI budgétaire, 2 feuilles)",
+        fonction=importer_mapping_budget, extensions=TABLEUR,
+        requis=(), optionnels=("date_effet", "feuille_charges", "feuille_produits"),
+        journalise=False,
+        aide="Classeur à DEUX feuilles, une par sens : un nom contenant « résultat » et "
+             "« charge », un autre contenant « résultat » et « produit » (casse, accents, "
+             "singulier/pluriel et mots en plus sans importance — « Résultat Produit » "
+             "convient). Dans chaque feuille : ligne 1 = en-têtes, colonne A = numéro de "
+             "compte comptable, colonne C = libellé de la ligne budgétaire (colonne B "
+             "libre). SANS ce mapping, le réalisé du suivi budgétaire vaut 0,00 sur "
+             "toutes les lignes.",
+    ),
     "budget": Domaine(
         libelle="Budget annuel (charges et produits consolidés)",
         fonction=importer_budget, extensions=TABLEUR,
@@ -156,6 +171,20 @@ def _nom_sain(nom: str | None, extensions: tuple[str, ...]) -> str:
     return tige[:100] + extension
 
 
+def _est_marqueur_fastapi(valeur) -> bool:
+    """La valeur est-elle le DÉFAUT `Form(None)` de la signature, et non une saisie ?
+
+    Appelé par HTTP, FastAPI résout chaque `Form(None)` en `None`. Appelé
+    DIRECTEMENT — ce que font les suites de tests du dépôt —, le défaut reste
+    l'objet `FieldInfo` lui-même : ni None, ni une chaîne. Sans ce filtre, tout
+    champ ajouté à la signature se met à ressembler à un paramètre fourni, et
+    l'endpoint refuse en 422 « le domaine n'accepte pas … » un appel qui ne lui
+    a pourtant rien envoyé. Le défaut est silencieux pour les appels HTTP et
+    n'apparaît qu'aux tests, d'où sa neutralisation ici, une fois pour toutes.
+    """
+    return isinstance(valeur, FieldInfo)
+
+
 def _parametres(domaine: str, spec: Domaine, fournis: dict) -> dict:
     """Traduit les champs du formulaire en arguments de la fonction d'ingestion.
 
@@ -165,7 +194,8 @@ def _parametres(domaine: str, spec: Domaine, fournis: dict) -> dict:
     """
     attendus = set(spec.requis) | set(spec.optionnels)
     donnes = {c: v for c, v in fournis.items()
-              if v is not None and (not isinstance(v, str) or v.strip() != "")}
+              if v is not None and not _est_marqueur_fastapi(v)
+              and (not isinstance(v, str) or v.strip() != "")}
 
     en_trop = sorted(set(donnes) - attendus)
     if en_trop:
@@ -215,7 +245,12 @@ def _ecrire_sur_disque(fichier: UploadFile, chemin: str) -> int:
 
 def _lignes_acceptees(resultat: dict) -> int:
     """Nombre de lignes chargées, quel que soit le vocabulaire du module d'ingestion."""
-    for cle in ("acceptees", "lignes_importees", "objectifs"):
+    #  Chaque module d'ingestion nomme son compteur à sa façon. Un nom absent de
+    #  cette liste faisait annoncer « Aucune ligne chargée — vérifier qu'il
+    #  s'agit du bon fichier » sur un import qui venait pourtant d'écrire 188
+    #  lignes dans Supabase. Le pire des messages : il accuse le fichier de
+    #  l'opérateur pour un défaut qui est ici.
+    for cle in ("acceptees", "lignes_importees", "objectifs", "comptes"):
         if isinstance(resultat.get(cle), int):
             return resultat[cle]
     return 0
@@ -310,6 +345,10 @@ def endpoint_import(domaine: str,
                     date_arrete: str | None = Form(None, description="AAAA-MM-JJ"),
                     date_effet: str | None = Form(None, description="AAAA-MM-JJ"),
                     feuille: str | None = Form(None),
+                    # Le mapping budgétaire vient d'un classeur tenu à la main :
+                    # ses deux onglets peuvent être nommés autrement que par défaut.
+                    feuille_charges: str | None = Form(None),
+                    feuille_produits: str | None = Form(None),
                     devise: str | None = Form(None),
                     exercice: int | None = Form(None),
                     hypothese: str | None = Form(None),
@@ -336,6 +375,7 @@ def endpoint_import(domaine: str,
 
     kwargs = _parametres(domaine, spec, {
         "date_arrete": date_arrete, "date_effet": date_effet, "feuille": feuille,
+        "feuille_charges": feuille_charges, "feuille_produits": feuille_produits,
         "devise": devise, "exercice": exercice, "hypothese": hypothese,
     })
     nom = _nom_sain(fichier.filename, spec.extensions)

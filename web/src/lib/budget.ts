@@ -49,8 +49,84 @@ export type ReponseBudget = {
   precedent: string | null;
   niveau_mensuel_disponible: boolean;
   motif_mensuel_absent: string | null;
+  /**
+   * Le mapping compte→ligne budgetaire est-il charge ?
+   *
+   * SANS LUI, aucun compte de la balance n'est rattache a une ligne : le
+   * realise sort a 0,00 sur TOUTES les lignes, face a un budget bien charge.
+   * Le calcul « reussit » et le resultat est faux — c'est le pire cas, et
+   * c'est celui qu'on a observe en production. L'ecran doit donc REFUSER
+   * d'afficher un realise plutot que montrer des zeros qu'on prendrait pour
+   * une sous-consommation totale.
+   */
+  mapping_present: boolean;
+  nb_comptes_mappes: number;
+  motif_realise_absent: string | null;
   lignes: LigneBudget[];
 };
+
+/* --------------------------------------------------------------------------
+   LES DEUX VOLETS — charges et produits ne se melangent jamais.
+   --------------------------------------------------------------------------
+   Ce ne sont pas deux groupes d'un meme tableau : ce sont deux suivis. Un
+   total qui additionnerait une charge et un produit ne designerait rien, et
+   un « % de realisation » calcule sur ce total serait pire encore. D'ou deux
+   sous-onglets stricts, chacun avec ses propres cartes et son propre total.
+   -------------------------------------------------------------------------- */
+
+export type CleVolet = "charges" | "produits";
+
+export type Volet = {
+  cle: CleVolet;
+  onglet: string;
+  /** Valeur de `sens` cote moteur (mapping_budget.sens). */
+  sens: SensLigne;
+  /** Comment lire un depassement sur ce volet. */
+  lecture: string;
+};
+
+export const VOLETS: Record<CleVolet, Volet> = {
+  charges: {
+    cle: "charges",
+    onglet: "Suivi des charges",
+    sens: "charge",
+    lecture:
+      "Depasser le budget est defavorable ; le sous-consommer est favorable. " +
+      "C'est la lecture appliquee aux couleurs de l'ecart.",
+  },
+  produits: {
+    cle: "produits",
+    onglet: "Suivi des produits",
+    sens: "produit",
+    lecture:
+      "Depasser le budget est favorable ; rester en-dessous est defavorable. " +
+      "C'est la lecture appliquee aux couleurs de l'ecart.",
+  },
+};
+
+export const ORDRE_VOLETS: CleVolet[] = ["charges", "produits"];
+
+export function estCleVolet(valeur: unknown): valeur is CleVolet {
+  return typeof valeur === "string" && valeur in VOLETS;
+}
+
+/**
+ * Lignes d'un volet.
+ *
+ * Une ligne dont le `sens` n'est ni « charge » ni « produit » (mapping
+ * incomplet — la table est editable) n'est rattachee A AUCUN volet : elle
+ * apparait a part, pour etre corrigee. La ranger d'office avec les charges
+ * fausserait un total sans que rien ne le signale.
+ */
+export function lignesDuVolet(lignes: LigneBudget[], volet: Volet): LigneBudget[] {
+  return lignes.filter((l) => l.sens === volet.sens);
+}
+
+/** Lignes qu'aucun volet ne reclame : sens absent ou inconnu du mapping. */
+export function lignesSansSens(lignes: LigneBudget[]): LigneBudget[] {
+  const connus = new Set(ORDRE_VOLETS.map((v) => VOLETS[v].sens));
+  return lignes.filter((l) => !connus.has(l.sens));
+}
 
 /**
  * Un rapport du moteur en pourcentage affichable.

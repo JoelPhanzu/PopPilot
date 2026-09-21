@@ -23,11 +23,14 @@ const NAVIGATION: Entree[] = [
   { href: "/comptabilite", libelle: "Comptabilite & indicateurs", pret: true },
   { href: "/epargne", libelle: "Epargne", pret: true },
   { href: "/budget", libelle: "Budget", pret: true },
-  { href: "/rapports", libelle: "Rapports reglementaires", pret: false },
+  { href: "/rapports", libelle: "Rapports reglementaires", pret: true },
   // L'import est le point d'entree de la plateforme, mais c'est une ECRITURE :
   // il n'apparait que pour DIRECTION / CDG. Un lien propose puis refuse par
   // l'API donnerait l'impression d'une panne plutot que d'une regle.
   { href: "/import", libelle: "Import CBS", pret: true, ecriture: true },
+  // La configuration engage tous les calculs : meme regle que l'import, elle
+  // n'apparait que pour les roles qui alimentent le socle.
+  { href: "/configuration", libelle: "Configuration", pret: true, ecriture: true },
 ];
 
 export function Coquille({

@@ -28,6 +28,21 @@ function classeEcart(sens: string, ecart: number): string {
   return "text-pop-encre";
 }
 
+/**
+ * Marqueur des lignes NON BUDGETEES.
+ *
+ * Une ligne qui a du realise mais aucun budget s'affiche « - » dans les
+ * colonnes budget, ecart et taux — et garde son realise. Trois raisons, et la
+ * troisieme est la vraie :
+ *   - « 0,00 » se lit « budgete a zero », ce qui n'est pas la meme chose que
+ *     « pas budgete » ;
+ *   - l'ecart vaudrait alors le realise tout entier, presente comme un
+ *     depassement ;
+ *   - et il serait colore en defavorable, accusant une ligne dont personne
+ *     n'a jamais decide qu'elle devait couter quelque chose.
+ */
+const NON_BUDGETEE = "-";
+
 export function TableauBudget({
   lignes,
   niveau,
@@ -49,7 +64,9 @@ export function TableauBudget({
         <h2 className="text-base font-semibold text-pop-encre">{niveau.titre}</h2>
         <p className="mt-0.5 text-[13px] text-pop-gris">
           Montants en {devise}, depuis la balance sans retraitement. Chaque groupe a son
-          total&nbsp;; charges et produits ne se totalisent pas ensemble.
+          total&nbsp;; charges et produits ne se totalisent pas ensemble. Une ligne non
+          budgetee porte «&nbsp;{NON_BUDGETEE}&nbsp;» en budget, ecart et taux&nbsp;: seul son
+          realise est retenu.
         </p>
       </header>
 
@@ -89,6 +106,10 @@ export function TableauBudget({
                   const realise = Number(l[niveau.champRealise]) || 0;
                   const ecart = Number(l[niveau.champEcart]) || 0;
                   const pct = enPourcent(l[niveau.champPct] as number | null);
+                  //  Budget a zero = ligne non budgetee. Le moteur ne distingue
+                  //  pas les deux (un budget absent vaut 0), et en pratique un
+                  //  budget de 0,00 EST une ligne non budgetee.
+                  const budgetee = budget !== 0;
                   return (
                     <tr key={l.ligne} className="transition hover:bg-pop-fond">
                       <th
@@ -98,21 +119,21 @@ export function TableauBudget({
                         {l.ligne}
                       </th>
                       <td className="chiffres px-3 py-2.5 text-right text-[13px] text-pop-gris">
-                        {montant(budget)}
+                        {budgetee ? montant(budget) : NON_BUDGETEE}
                       </td>
                       <td className="chiffres px-3 py-2.5 text-right text-[13px] text-pop-encre">
                         {montant(realise)}
                       </td>
                       <td
-                        className={`chiffres px-3 py-2.5 text-right text-[13px] ${classeEcart(sens, ecart)}`}
+                        className={
+                          "chiffres px-3 py-2.5 text-right text-[13px] " +
+                          (budgetee ? classeEcart(sens, ecart) : "text-pop-gris")
+                        }
                       >
-                        {montant(ecart)}
+                        {budgetee ? montant(ecart) : NON_BUDGETEE}
                       </td>
                       <td className="chiffres px-3 py-2.5 text-right text-[13px] text-pop-encre">
-                        {/* Pas de budget sur la ligne : pas de taux. Un « 0 % »
-                            laisserait croire a une sous-consommation totale
-                            alors que rien n'avait ete prevu. */}
-                        {pct === null ? "—" : pourcent(pct)}
+                        {budgetee && pct !== null ? pourcent(pct) : NON_BUDGETEE}
                       </td>
                     </tr>
                   );

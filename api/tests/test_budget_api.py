@@ -280,6 +280,107 @@ def test_date_invalide_repond_400():
         _nettoyer()
 
 
+def _classeur_mapping(nom_charges, nom_produits) -> str:
+    """Fabrique un classeur de mapping au format attendu, et rend son chemin."""
+    import openpyxl
+    import tempfile
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    for nom, comptes in ((nom_charges, [(COMPTE, LIGNE)]),
+                         (nom_produits, [("7.0.1.0.1", "Interets sur credits")])):
+        ws = wb.create_sheet(nom)
+        # Ligne 1 = en-tetes, colonne A = compte, colonne B libre, colonne C = ligne.
+        ws.append(["Compte", "Libelle du compte", "Ligne budgetaire"])
+        for compte, ligne in comptes:
+            ws.append([compte, f"libelle de {compte}", ligne])
+    chemin = os.path.join(tempfile.mkdtemp(prefix="pp_mapping_"), "mapping.xlsx")
+    wb.save(chemin)
+    return chemin
+
+
+def test_noms_de_feuilles_tolerants():
+    """« Résultat Produit » (singulier, majuscule) doit etre reconnu.
+
+    Les onglets sont nommes a la main : exiger un libelle au caractere pres
+    obligerait le CDG a renommer son classeur pour satisfaire l'outil. Ce cas
+    garde le refus reel rencontre en production sur « Résultat Produit ».
+    """
+    import openpyxl
+    from ingest.import_budget import _trouver_feuille
+
+    acceptes = [
+        ("Résultat Charges", "Résultat Produit"),        # le cas reel
+        ("Résultat charges", "Résultat produits"),
+        ("RESULTAT DES CHARGES", "resultat produit 2026"),
+        ("Resultat  Charges", "Résultat Produits"),
+    ]
+    for nom_c, nom_p in acceptes:
+        wb = openpyxl.Workbook()
+        wb.remove(wb.active)
+        wb.create_sheet(nom_c)
+        wb.create_sheet(nom_p)
+        assert _trouver_feuille(wb, None, "charge") == nom_c, (nom_c, nom_p)
+        assert _trouver_feuille(wb, None, "produit") == nom_p, (nom_c, nom_p)
+
+    # Sans le mot « resultat », on ne devine PAS : deux feuilles nommees
+    # « Charges »/« Produits » pourraient etre tout autre chose.
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    wb.create_sheet("Charges")
+    wb.create_sheet("Produits")
+    assert _trouver_feuille(wb, None, "charge") is None
+    assert _trouver_feuille(wb, None, "produit") is None
+
+
+def test_mapping_importe_rend_le_realise_non_nul():
+    """Le symptome de production, de bout en bout : 0,00 avant, un vrai montant apres."""
+    _preparer()
+    try:
+        from ingest.import_budget import importer_mapping_budget
+        from socle.schema import get_session, MappingBudget
+
+        # On repart de l'etat REEL de production : mapping_budget vide. La
+        # fixture en pose une ligne pour les autres cas ; ici elle masquerait
+        # justement le defaut qu'on veut reproduire.
+        s = get_session(DB)
+        s.query(MappingBudget).delete()
+        s.commit()
+        s.close()
+
+        avant = _appeler(arrete="2026-07-31", user=_utilisateur("CDG"))
+        assert avant["mapping_present"] is False, avant
+        assert avant["motif_realise_absent"], "aucun motif donne pour un realise a zero"
+        assert abs(_ligne(avant)["realise_cumule"]) < 0.01,             "sans mapping, le realise devrait etre nul"
+
+        chemin = _classeur_mapping("Résultat Charges", "Résultat Produit")
+        r = importer_mapping_budget(chemin, db_path=DB)
+        assert r["comptes"] == 2, r
+
+        apres = _appeler(arrete="2026-07-31", user=_utilisateur("CDG"))
+        assert apres["mapping_present"] is True, apres
+        assert apres["nb_comptes_mappes"] == 2, apres
+        assert abs(_ligne(apres)["realise_cumule"] - 7_500.0) < 0.01, _ligne(apres)
+    finally:
+        _nettoyer()
+
+
+def test_feuille_introuvable_dit_le_format_attendu():
+    """Un refus doit APPRENDRE le format, pas seulement constater l'echec."""
+    _preparer()
+    try:
+        from ingest.import_budget import importer_mapping_budget
+        chemin = _classeur_mapping("Onglet1", "Onglet2")
+        try:
+            importer_mapping_budget(chemin, db_path=DB)
+            raise AssertionError("classeur sans feuille reconnue accepte")
+        except ValueError as e:
+            message = str(e)
+            assert "Onglet1" in message, "le message ne dit pas ce que contient le fichier"
+            assert "colonne A" in message and "colonne C" in message,                 "le message ne dit pas le format attendu"
+    finally:
+        _nettoyer()
+
+
 if __name__ == "__main__":
     D.sortir(D.lancer("Suivi budgetaire (GET /budget)", [
         (test_realise_mensuel_est_une_difference_de_cumuls,
@@ -300,4 +401,10 @@ if __name__ == "__main__":
          "arrete sans balance : realise nul, budget toujours rendu"),
         (test_date_invalide_repond_400,
          "date au mauvais format -> 400 explicite"),
+        (test_noms_de_feuilles_tolerants,
+         "noms d'onglets tolerants (« Résultat Produit » reconnu)"),
+        (test_mapping_importe_rend_le_realise_non_nul,
+         "mapping importe : le realise passe de 0,00 a un vrai montant"),
+        (test_feuille_introuvable_dit_le_format_attendu,
+         "refus d'un mauvais classeur : le message apprend le format"),
     ]))

@@ -248,3 +248,63 @@ export function ordonner(indicateurs: Record<string, Indicateur>) {
     .map((code) => ({ code, famille: "E" as Famille, libelle: code }));
   return [...connus, ...inconnus];
 }
+
+/* --------------------------------------------------------------------------
+   ÉTATS DÉTAILLÉS — le référentiel BCC ligne à ligne (GET /etats-financiers/detail)
+   --------------------------------------------------------------------------
+
+   Ce que l'agrégat resume en quatre rubriques par cote, le referentiel le rend
+   en 32 lignes d'actif, 28 de passif et 26 de compte de resultat — codes BCC
+   (V1.F0a.xx, V1.F0p.xx, V1.F1.xx), sous-totaux, soldes intermediaires et
+   LIGNES A ZERO comprises. Une ligne a zero se publie : l'absence d'une ligne
+   attendue par la BCC est une anomalie de declaration, pas une economie de
+   place.
+   -------------------------------------------------------------------------- */
+
+export type CompteBalance = {
+  numero_compte: string;
+  libelle: string | null;
+  solde_net: number;
+};
+
+export type LigneEtat = {
+  code: string;
+  libelle: string;
+  /** « ligne » lit des comptes ; « sous_total » et « total_general » somment. */
+  nature: "ligne" | "sous_total" | "total_general";
+  montant: number;
+  /** −1 : la ligne se DEDUIT de son sous-total (provisions, amortissements). */
+  signe: number;
+  prefixes?: string[];
+  comptes: CompteBalance[];
+};
+
+export type ControlesDetail = {
+  bilan_equilibre_ecart: number;
+  equilibre: boolean;
+  /** Ecart entre le referentiel et l'agregat valide : doit rester nul. */
+  ecart_avec_agregat: number;
+  ecart_resultat_avec_agregat: number;
+  comptes_non_places: string[];
+  nb_comptes_non_places: number;
+  nb_comptes_balance: number;
+};
+
+export type EtatsDetailles = {
+  date_arrete: string;
+  devise: string;
+  actif: LigneEtat[];
+  passif: LigneEtat[];
+  resultat: LigneEtat[];
+  total_actif: number;
+  total_passif: number;
+  resultat_net: number;
+  /** D'ou vient le resultat porte au passif : compte 13, ou classes 6 et 7. */
+  resultat_source: string;
+  controles: ControlesDetail;
+};
+
+/** Total des comptes d'une ligne — sert a montrer que le detail reconstitue la ligne. */
+export function totalComptes(comptes: CompteBalance[]): number {
+  return comptes.reduce((s, c) => s + (c.solde_net ?? 0), 0);
+}

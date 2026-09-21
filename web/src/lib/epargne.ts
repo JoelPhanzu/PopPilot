@@ -101,3 +101,44 @@ export function soldeMoyen(encours: number, nbEpargnants: number): number | null
   if (!Number.isFinite(encours) || !nbEpargnants) return null;
   return encours / nbEpargnants;
 }
+
+/**
+ * Contre-valeur en USD d'un montant exprime en devise d'origine.
+ *
+ * REGLE, et elle est etroite : seul le CDF est converti, au taux de l'arrete.
+ * C'est exactement ce que fait `engine/epargne.py` (`to_usd`), et la copier ici
+ * n'est pas une duplication de calcul mais la condition pour que la colonne
+ * affichee se totalise a l'identique de `encours_total` renvoye par le moteur —
+ * ce que l'ecran verifie et montre.
+ *
+ * Une devise inconnue n'est PAS convertie a l'aveugle : on renvoie `null`, la
+ * cellule reste vide et le total le dit. Traiter un franc suisse comme un
+ * dollar passerait inapercu ; une case vide se remarque.
+ *
+ * Sans taux saisi pour l'arrete, aucune contre-valeur n'est produite : la
+ * plateforme ne fige jamais un taux (§42).
+ */
+export function contreValeurUsd(
+  montant: number,
+  devise: string,
+  taux: number | null,
+): number | null {
+  if (!Number.isFinite(montant)) return null;
+  if (devise === "USD") return montant;
+  if (devise === "CDF") return taux ? montant / taux : null;
+  return null;
+}
+
+/** Somme des contre-valeurs connues ; `null` des qu'une devise n'est pas convertible. */
+export function totalConverti(
+  lignes: { devise: string; montant: number }[],
+  taux: number | null,
+): number | null {
+  let total = 0;
+  for (const l of lignes) {
+    const v = contreValeurUsd(l.montant, l.devise, taux);
+    if (v === null) return null;
+    total += v;
+  }
+  return total;
+}

@@ -23,15 +23,18 @@ import { appelerApi } from "@/lib/api";
 import { etatsDemo, indicateursDemo } from "@/lib/demo";
 import { aAccesTotal, type Profil } from "@/lib/roles";
 import type { SourceDonnees } from "@/lib/source";
-import type { EtatsFinanciers, Indicateurs } from "@/lib/comptabilite";
+import type { EtatsDetailles, EtatsFinanciers, Indicateurs } from "@/lib/comptabilite";
 
 export type TableauComptabilite = {
   arrete: string;
   /** D'ou viennent les chiffres affiches : socle (API) ou illustration. */
   source: SourceDonnees;
   etats: EtatsFinanciers | null;
+  /** Le referentiel BCC ligne a ligne — l'ecran l'affiche en INTEGRALITE. */
+  detail: EtatsDetailles | null;
   indicateurs: Indicateurs | null;
   erreurEtats: string | null;
+  erreurDetail: string | null;
   erreurIndicateurs: string | null;
 };
 
@@ -49,8 +52,12 @@ export async function chargerComptabilite(
 ): Promise<TableauComptabilite> {
   const parametre = encodeURIComponent(arrete);
 
-  const [etats, indicateurs] = await Promise.all([
+  // TROIS appels en parallele : l'agregat, le referentiel detaille et les
+  // indicateurs reposent tous sur la meme balance, mais aucun n'attend l'autre.
+  // Enchaines, ils tripleraient un temps de reponse deja long.
+  const [etats, detail, indicateurs] = await Promise.all([
     appelerApi<EtatsFinanciers>(`/etats-financiers?arrete=${parametre}`, jeton),
+    appelerApi<EtatsDetailles>(`/etats-financiers/detail?arrete=${parametre}`, jeton),
     appelerApi<Indicateurs>(`/indicateurs?arrete=${parametre}`, jeton),
   ]);
 
@@ -63,8 +70,12 @@ export async function chargerComptabilite(
       arrete,
       source: "demonstration",
       etats: etatsDemo(),
+      // Pas de referentiel en demonstration : il ne se fabrique pas. Inventer
+      // 86 lignes de declaration BCC donnerait un ecran indiscernable du reel.
+      detail: null,
       indicateurs: indicateursDemo(arrete),
       erreurEtats: etats.erreur,
+      erreurDetail: null,
       erreurIndicateurs: null,
     };
   }
@@ -73,8 +84,10 @@ export async function chargerComptabilite(
     arrete,
     source: "api",
     etats: etats.ok ? etats.donnees : null,
+    detail: detail.ok ? detail.donnees : null,
     indicateurs: indicateurs.ok ? indicateurs.donnees : null,
     erreurEtats: etats.ok ? null : etats.erreur,
+    erreurDetail: detail.ok ? null : detail.erreur,
     erreurIndicateurs: indicateurs.ok ? null : indicateurs.erreur,
   };
 }

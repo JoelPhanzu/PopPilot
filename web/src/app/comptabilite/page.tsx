@@ -23,14 +23,16 @@ import { FournisseurSession } from "@/composants/ContexteSession";
 import { CarteIndicateur } from "@/composants/CarteIndicateur";
 import { SelecteurArrete } from "@/composants/SelecteurArrete";
 import { BandeauSource } from "@/composants/BandeauSource";
+import { BoutonExport } from "@/composants/BoutonExport";
 import { TableauBilan } from "@/composants/TableauBilan";
+import { EtatReferentiel } from "@/composants/EtatReferentiel";
 import { TableauResultat } from "@/composants/TableauResultat";
 import { TableauIndicateurs } from "@/composants/TableauIndicateurs";
 import { TableauAgregats } from "@/composants/TableauAgregats";
 import { ReservesComptables } from "@/composants/ReservesComptables";
 import { sessionCourante } from "@/lib/session";
 import { chargerComptabilite, refusComptabilite } from "@/lib/comptabilite-serveur";
-import { bilanDesNormes } from "@/lib/comptabilite";
+import { bilanDesNormes, type EtatsDetailles, type LigneEtat } from "@/lib/comptabilite";
 import { ARRETE_PAR_DEFAUT } from "@/lib/credit";
 import { dateArreteValide, dateLongue, entier, montant, part, pourcent } from "@/lib/format";
 
@@ -54,6 +56,82 @@ function Barrage({ titre, message }: { titre: string; message: string }) {
         </a>
       </div>
     </main>
+  );
+}
+
+
+/** Nombre de lignes ELEMENTAIRES d'un etat (les sous-totaux ne se comptent pas). */
+function nbLignes(lignes: LigneEtat[]): number {
+  return lignes.filter((l) => l.nature === "ligne").length;
+}
+
+/**
+ * Controles du referentiel — affiches AVANT les etats, pas apres.
+ *
+ * Trois verifications, et aucune n'est decorative :
+ *  - l'ECART AVEC L'AGREGAT confronte deux chemins de calcul independants sur
+ *    les memes donnees. Nul, il vaut preuve ; non nul, il signale un compte que
+ *    le referentiel ne sait pas placer, et la liste le nomme.
+ *  - les COMPTES NON PLACES n'entrent dans aucun total : ils manquent a la
+ *    declaration.
+ *  - l'EQUILIBRE du bilan. Le fichier magique porte lui-meme un ecart de
+ *    quelques milliemes (arrondis sur ~2 000 comptes) ; au-dela, c'est reel.
+ */
+function ControlesReferentiel({ detail }: { detail: EtatsDetailles }) {
+  const c = detail.controles;
+  const concordant = Math.abs(c.ecart_avec_agregat) < 0.01;
+  const sain = concordant && c.nb_comptes_non_places === 0 && c.equilibre;
+
+  const cadre = sain
+    ? "border-pop-ok/30 bg-pop-ok/5"
+    : "border-pop-danger/30 bg-pop-danger/5";
+
+  return (
+    <section className={`rounded-xl border ${cadre} px-5 py-4`}>
+      <h2 className="text-[13px] font-semibold text-pop-encre">
+        Controles du referentiel
+      </h2>
+      <dl className="mt-2 grid grid-cols-1 gap-x-8 gap-y-1.5 sm:grid-cols-2">
+        <div className="flex justify-between gap-4">
+          <dt className="text-[12px] text-pop-gris">Bilan equilibre (actif − passif)</dt>
+          <dd className={`chiffres text-[12px] font-medium ${c.equilibre ? "text-pop-ok" : "text-pop-danger"}`}>
+            {montant(c.bilan_equilibre_ecart)}
+          </dd>
+        </div>
+        <div className="flex justify-between gap-4">
+          <dt className="text-[12px] text-pop-gris">Ecart avec l&apos;agregat valide</dt>
+          <dd className={`chiffres text-[12px] font-medium ${concordant ? "text-pop-ok" : "text-pop-danger"}`}>
+            {montant(c.ecart_avec_agregat)}
+          </dd>
+        </div>
+        <div className="flex justify-between gap-4">
+          <dt className="text-[12px] text-pop-gris">Comptes de balance lus</dt>
+          <dd className="chiffres text-[12px] text-pop-encre">{entier(c.nb_comptes_balance)}</dd>
+        </div>
+        <div className="flex justify-between gap-4">
+          <dt className="text-[12px] text-pop-gris">Comptes non places</dt>
+          <dd className={`chiffres text-[12px] font-medium ${c.nb_comptes_non_places === 0 ? "text-pop-ok" : "text-pop-danger"}`}>
+            {entier(c.nb_comptes_non_places)}
+          </dd>
+        </div>
+      </dl>
+
+      {!c.equilibre && (
+        <p className="mt-2 text-[12px] leading-relaxed text-pop-danger">
+          Le bilan ne boucle pas a cet arrete. Tout ce qui en decoule (fonds propres,
+          solvabilite, ratios) est a lire avec cette reserve — l&apos;ecart vient de la
+          balance importee, pas du referentiel, puisque les deux chemins de calcul
+          concordent.
+        </p>
+      )}
+      {c.nb_comptes_non_places > 0 && (
+        <p className="mt-2 text-[12px] leading-relaxed text-pop-danger">
+          Comptes absents du referentiel&nbsp;: {c.comptes_non_places.slice(0, 20).join(", ")}
+          {c.comptes_non_places.length > 20 && ` (+${entier(c.comptes_non_places.length - 20)} autres)`}.
+          Ils n&apos;entrent dans aucun total.
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -100,7 +178,7 @@ export default async function PageComptabilite({
   }
 
   const tableau = await chargerComptabilite(arrete, profil, jeton);
-  const { etats, indicateurs } = tableau;
+  const { etats, detail, indicateurs } = tableau;
 
   // Le decompte de conformite est le seul chiffre que cette page DERIVE, et il
   // ne derive que des verdicts : il ne cree aucune valeur d'indicateur.
@@ -125,12 +203,15 @@ export default async function PageComptabilite({
                 Arrete du {dateLongue(tableau.arrete)} &middot; MICROPOP, toutes agences
               </p>
             </div>
-            <p className="text-xs text-pop-gris">
-              Source&nbsp;:{" "}
-              {tableau.source === "api"
+            <div className="flex flex-wrap items-center gap-3">
+              <BoutonExport domaine="comptabilite" arrete={tableau.arrete} />
+              <p className="text-xs text-pop-gris">
+                Source&nbsp;:{" "}
+                {tableau.source === "api"
                 ? "moteurs valides (GET /etats-financiers, /indicateurs)"
                 : "donnees de demonstration"}
-            </p>
+              </p>
+            </div>
           </header>
 
           <SelecteurArrete key={tableau.arrete} arrete={tableau.arrete} />
@@ -210,6 +291,46 @@ export default async function PageComptabilite({
 
           <ReservesComptables etats={etats} indicateurs={indicateurs} />
 
+          {/* LE REFERENTIEL D'ABORD, EN INTEGRALITE. Les 32 lignes de l'actif,
+              les 28 du passif, les 26 du compte de resultat : codes BCC,
+              sous-totaux, soldes intermediaires et lignes a zero comprises.
+              C'est ce qui se declare ; le resume par rubrique vient apres, et
+              seulement comme lecture d'ensemble. */}
+          {detail !== null && (
+            <>
+              <ControlesReferentiel detail={detail} />
+
+              <EtatReferentiel
+                titre="Bilan — ACTIF"
+                sousTitre={`${nbLignes(detail.actif)} lignes du referentiel (V1.F0a), comptes de balance depliables. Montants en ${detail.devise}.`}
+                lignes={detail.actif}
+                devise={detail.devise}
+              />
+              <EtatReferentiel
+                titre="Bilan — PASSIF"
+                sousTitre={`${nbLignes(detail.passif)} lignes du referentiel (V1.F0p). Resultat porte au passif : ${detail.resultat_source}.`}
+                lignes={detail.passif}
+                devise={detail.devise}
+              />
+              <EtatReferentiel
+                titre="Compte de resultat"
+                sousTitre={`${nbLignes(detail.resultat)} lignes du referentiel (V1.F1), soldes intermediaires (80, 82, 83, 84, 85, 87) compris.`}
+                lignes={detail.resultat}
+                devise={detail.devise}
+              />
+            </>
+          )}
+
+          {detail === null && tableau.erreurDetail !== null && (
+            <div className="rounded-xl border border-pop-danger/30 bg-pop-danger/5 px-4 py-3 text-sm text-pop-danger">
+              <p className="font-semibold">
+                Etats detailles indisponibles : le referentiel ligne a ligne n&apos;a pas pu etre produit.
+              </p>
+              <p className="mt-1 text-[13px] leading-relaxed">{tableau.erreurDetail}</p>
+            </div>
+          )}
+
+          {/* Lecture d'ensemble, en complement — jamais en remplacement. */}
           {etats !== null && (
             <>
               <TableauBilan

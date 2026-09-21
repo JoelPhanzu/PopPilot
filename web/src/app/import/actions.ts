@@ -26,7 +26,16 @@ import type { EtatImport, ResultatImport } from "@/lib/import";
 // au chargement (« can only export async functions, found object »).
 
 /** Champs que l'API accepte (cf. DOMAINES dans api/import_cbs.py). */
-const CHAMPS = ["date_arrete", "date_effet", "feuille", "devise", "exercice", "hypothese"] as const;
+const CHAMPS = [
+  "date_arrete",
+  "date_effet",
+  "feuille",
+  "feuille_charges",
+  "feuille_produits",
+  "devise",
+  "exercice",
+  "hypothese",
+] as const;
 
 export async function importerFichier(
   _precedent: EtatImport,
@@ -86,6 +95,9 @@ export async function importerFichier(
   // leur version d'avant l'import.
   revalidatePath("/import");
   revalidatePath("/credit");
+  revalidatePath("/comptabilite");
+  revalidatePath("/epargne");
+  revalidatePath("/budget");
 
   return { etat: "succes", resultat: reponse.donnees };
 }

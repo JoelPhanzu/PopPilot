@@ -20,6 +20,7 @@ import { GraphiquePar } from "@/composants/GraphiquePar";
 import { TableauAgences } from "@/composants/TableauAgences";
 import { SelecteurArrete } from "@/composants/SelecteurArrete";
 import { BandeauSource } from "@/composants/BandeauSource";
+import { BoutonExport } from "@/composants/BoutonExport";
 import { sessionCourante } from "@/lib/session";
 import { chargerTableauCredit, ARRETE_PAR_DEFAUT } from "@/lib/credit";
 import { aAccesTotal } from "@/lib/roles";
@@ -92,12 +93,15 @@ export default async function PageCredit({
                 {total ? "MICROPOP, toutes agences" : `Agence ${profil.agence ?? "—"}`}
               </p>
             </div>
-            <p className="text-xs text-pop-gris">
-              Source&nbsp;:{" "}
-              {tableau.source === "api"
+            <div className="flex flex-wrap items-center gap-3">
+              <BoutonExport domaine="credit" arrete={tableau.arrete} />
+              <p className="text-xs text-pop-gris">
+                Source&nbsp;:{" "}
+                {tableau.source === "api"
                 ? "moteurs valides (GET /par, /provisions)"
                 : "donnees de demonstration"}
-            </p>
+              </p>
+            </div>
           </header>
 
           <SelecteurArrete key={tableau.arrete} arrete={tableau.arrete} />

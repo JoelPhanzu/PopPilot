@@ -147,6 +147,7 @@ def _appeler(I, domaine, *, nom, contenu, user, **parametres):
     """
     from fastapi import UploadFile
     champs = {"date_arrete": None, "date_effet": None, "feuille": None,
+              "feuille_charges": None, "feuille_produits": None,
               "devise": None, "exercice": None, "hypothese": None}
     champs.update(parametres)
     return I.endpoint_import(domaine,
@@ -402,7 +403,10 @@ def test_journal_et_catalogue_respectent_les_roles():
 
         catalogue = I.endpoint_domaines(user=_utilisateur(A, uids, "cdg"))
         cles = {d["cle"] for d in catalogue["domaines"]}
-        assert cles == {"credit", "balance", "epargne", "objectifs", "budget"}, cles
+        # « budget_mapping » est le mapping compte→ligne, sans lequel le suivi
+        # budgetaire affiche un realise a 0,00 sur toutes les lignes.
+        assert cles == {"credit", "balance", "epargne", "objectifs",
+                        "budget", "budget_mapping"}, cles
     finally:
         _nettoyer()
 

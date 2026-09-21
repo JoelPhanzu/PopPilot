@@ -194,13 +194,30 @@ def suivi_budgetaire(date_arrete, precedent=None, hypothese="H1",
     lignes = analyse_ecart(d, precedent, d.year, d.month,
                            hypothese=hypothese, db_path=db_path)
 
+    # Sans mapping compte→ligne, AUCUN compte de la balance n'est rattaché à une
+    # ligne budgétaire : le réalisé sort à 0,00 partout, face à un budget bien
+    # chargé. Le calcul « réussit » et le résultat est faux — c'est le pire cas.
+    # On le DIT, et l'écran refuse alors d'afficher un réalisé plutôt que de
+    # montrer des zéros qu'on prendrait pour une sous-consommation totale.
+    mapping = lire_mapping(db_path=db_path)
+    nb_mappes = len(mapping)
+
     return {
         "arrete": d,
         "exercice": d.year,
         "mois": d.month,
         "hypothese": hypothese,
         "precedent": precedent,
-        "niveau_mensuel_disponible": mensuel_ok,
+        "mapping_present": nb_mappes > 0,
+        "nb_comptes_mappes": nb_mappes,
+        "motif_realise_absent": None if nb_mappes else (
+            "Aucun mapping compte→ligne budgétaire n'est chargé (table mapping_budget vide). "
+            "Le réalisé ne peut être rattaché à aucune ligne : il vaudrait 0,00 partout. "
+            "Charger les feuilles « Résultat charges » et « Résultat produits » du fichier "
+            "de suivi budgétaire (import « budget_mapping »), ou saisir les affectations "
+            "à la main depuis la page Configuration."
+        ),
+        "niveau_mensuel_disponible": mensuel_ok and nb_mappes > 0,
         "motif_mensuel_absent": None if mensuel_ok else (
             f"Aucune balance de l'exercice {d.year} antérieure au mois {d.month:02d} "
             f"n'est chargée. Le réalisé mensuel est une différence de deux cumuls : "

@@ -20,6 +20,7 @@ import { FournisseurSession } from "@/composants/ContexteSession";
 import { CarteIndicateur } from "@/composants/CarteIndicateur";
 import { SelecteurArrete } from "@/composants/SelecteurArrete";
 import { BandeauSource } from "@/composants/BandeauSource";
+import { BoutonExport } from "@/composants/BoutonExport";
 import { VentilationEpargne } from "@/composants/VentilationEpargne";
 import { TableauEpargneDevises } from "@/composants/TableauEpargneDevises";
 import { sessionCourante } from "@/lib/session";
@@ -105,12 +106,15 @@ export default async function PageEpargne({
                 Arrete du {dateLongue(tableau.arrete)} &middot; MICROPOP, toutes agences
               </p>
             </div>
-            <p className="text-xs text-pop-gris">
-              Source&nbsp;:{" "}
-              {tableau.source === "api"
+            <div className="flex flex-wrap items-center gap-3">
+              <BoutonExport domaine="epargne" arrete={tableau.arrete} />
+              <p className="text-xs text-pop-gris">
+                Source&nbsp;:{" "}
+                {tableau.source === "api"
                 ? "moteur valide (GET /epargne)"
                 : "donnees de demonstration"}
-            </p>
+              </p>
+            </div>
           </header>
 
           <SelecteurArrete key={tableau.arrete} arrete={tableau.arrete} />
@@ -164,6 +168,8 @@ export default async function PageEpargne({
               <TableauEpargneDevises
                 parTypeDevise={e.par_type_devise}
                 parDeviseOrigine={e.par_devise_origine}
+                taux={e.taux_change}
+                encoursTotal={e.encours_total}
               />
             </>
           )}

@@ -22,6 +22,7 @@ from engine.derivation import deriver_provisions, croissance_portefeuille
 from engine.migrations import analyser_migrations
 from engine.decaissement import decaissements
 from engine.etats_financiers import etats_financiers
+from engine.etats_detail import etats_detailles
 from engine.indicateurs import indicateurs_prudentiels
 from engine.epargne import synthese_epargne, nb_epargnants
 from engine.budget import suivi_budgetaire
@@ -29,6 +30,9 @@ from engine.budget import suivi_budgetaire
 from auth_supabase import (utilisateur_courant, filtrer_par_agence,
                            exiger_role, ROLES_ACCES_TOTAL)
 from import_cbs import routeur as routeur_import
+from configuration import routeur as routeur_configuration
+from export_excel import routeur as routeur_export
+from rapports import routeur as routeur_rapports
 
 @asynccontextmanager
 async def _cycle_de_vie(_app: FastAPI):
@@ -69,6 +73,19 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"],
 # Import des fichiers du CBS depuis le web (POST /import/{domaine}, GET /imports).
 # Endpoints définis dans import_cbs.py : ils exposent ingest/ sans en réécrire un calcul.
 app.include_router(routeur_import)
+
+# Parametres saisis a la main (taux, provisions, reintegrations, mapping) et
+# referentiel des agences. Aucun calcul : ces endpoints ouvrent au web ce que
+# ingest/ et socle/ savent deja ecrire.
+app.include_router(routeur_configuration)
+
+# Export Excel des tableaux de bord. Appelle les MEMES moteurs que les ecrans :
+# ce qui est exporte est ce qui est affiche, au cloisonnement pres.
+app.include_router(routeur_export)
+
+# Rapports reglementaires BCC (FINA, AML/LBC-FT, systeme de paiement).
+# Ne touchent PAS au socle : une generation le lit, elle ne l'ecrit pas.
+app.include_router(routeur_rapports)
 
 
 @app.exception_handler(ValueError)
@@ -195,6 +212,21 @@ def endpoint_decaissements(arrete: str, debut: str, fin: str,
 def endpoint_etats(arrete: str, user: dict = Depends(utilisateur_courant)):
     exiger_role(user, ROLES_ACCES_TOTAL)
     return etats_financiers(_d(arrete))
+
+
+@app.get("/etats-financiers/detail")
+def endpoint_etats_detail(arrete: str, devise: str = "USD",
+                          user: dict = Depends(utilisateur_courant)):
+    """Bilan et compte de résultat au format INTÉGRAL du référentiel BCC.
+
+    Les 32 lignes de l'actif, les 28 du passif, les 26 du compte de résultat —
+    sous-totaux, soldes intermédiaires et lignes à zéro compris — chacune avec
+    les comptes de balance qui la composent. `/etats-financiers` en reste au
+    résumé par rubrique ; les deux doivent donner le même total général, et
+    `controles.ecart_avec_agregat` le vérifie à chaque appel.
+    """
+    exiger_role(user, ROLES_ACCES_TOTAL)
+    return etats_detailles(_d(arrete), devise=devise.strip().upper())
 
 
 @app.get("/indicateurs")

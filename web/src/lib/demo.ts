@@ -469,6 +469,12 @@ export function budgetDemo(arrete: string): ReponseBudget {
     precedent,
     niveau_mensuel_disponible: true,
     motif_mensuel_absent: null,
+    // En demonstration le mapping est repute charge : c'est le cas nominal
+    // qu'on veut montrer. L'ecran « mapping absent » se verifie sur la vraie
+    // base, pas sur une illustration.
+    mapping_present: true,
+    nb_comptes_mappes: 61,
+    motif_realise_absent: null,
     lignes,
   };
 }
