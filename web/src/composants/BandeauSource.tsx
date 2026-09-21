@@ -6,7 +6,7 @@
  * d'illustration, ou API muette — pour qu'une capture d'ecran ne puisse jamais
  * faire passer une demonstration pour un arrete reel.
  */
-import type { SourceDonnees } from "@/lib/credit";
+import type { SourceDonnees } from "@/lib/source";
 
 export function BandeauSource({
   source,

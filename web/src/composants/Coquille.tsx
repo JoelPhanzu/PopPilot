@@ -20,7 +20,7 @@ type Entree = { href: string; libelle: string; pret: boolean; ecriture?: boolean
 
 const NAVIGATION: Entree[] = [
   { href: "/credit", libelle: "Credit", pret: true },
-  { href: "/comptabilite", libelle: "Comptabilite & indicateurs", pret: false },
+  { href: "/comptabilite", libelle: "Comptabilite & indicateurs", pret: true },
   { href: "/epargne", libelle: "Epargne", pret: false },
   { href: "/budget", libelle: "Budget", pret: false },
   { href: "/rapports", libelle: "Rapports reglementaires", pret: false },

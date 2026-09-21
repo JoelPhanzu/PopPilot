@@ -52,7 +52,10 @@ export type ReponseProvisions = {
   provisions_manuelles?: Record<string, string>;
 };
 
-export type SourceDonnees = "api" | "demonstration";
+// Provenance des chiffres : type commun a tous les domaines (cf. lib/source.ts).
+// Re-exporte ici pour ne rien casser des ecrans qui l'importaient du credit.
+export type { SourceDonnees } from "@/lib/source";
+import type { SourceDonnees } from "@/lib/source";
 
 export type TableauCredit = {
   arrete: string;

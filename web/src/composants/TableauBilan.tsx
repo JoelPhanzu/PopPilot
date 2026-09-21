@@ -16,10 +16,20 @@ function Colonne({
   titre,
   rubriques,
   total,
+  ligneFinale,
 }: {
   titre: string;
   rubriques: Rubriques;
   total: number;
+  /**
+   * Ligne ajoutee APRES les rubriques de la balance, et qui compte pourtant
+   * dans le total : le resultat de l'exercice au passif. Le moteur l'ajoute a
+   * `total_passif` sans en faire une rubrique (il n'en est pas une : il se
+   * deduit des classes 6 et 7). Sans elle a l'ecran, la colonne passif
+   * affichait un total superieur a la somme de ses lignes — le lecteur
+   * cherchait une erreur de bilan la ou il n'y avait qu'une ligne manquante.
+   */
+  ligneFinale?: { libelle: string; valeur: number; note?: string };
 }) {
   const lignes = Object.entries(rubriques).sort((a, b) => b[1] - a[1]);
 
@@ -46,6 +56,30 @@ function Colonne({
               </tr>
             );
           })}
+
+          {ligneFinale && (
+            <tr className="transition hover:bg-pop-fond">
+              <th scope="row" className="px-4 py-2.5 text-left">
+                <span className="text-[13px] font-normal text-pop-encre">
+                  {ligneFinale.libelle}
+                </span>
+                {ligneFinale.note && (
+                  <span className="mt-0.5 block text-[11px] text-pop-gris">
+                    {ligneFinale.note}
+                  </span>
+                )}
+              </th>
+              <td className="chiffres px-2 py-2.5 text-right text-[13px] text-pop-encre">
+                {montant(ligneFinale.valeur)}
+              </td>
+              <td className="chiffres px-4 py-2.5 text-right text-[12px] text-pop-gris">
+                {(() => {
+                  const poids = part(ligneFinale.valeur, total);
+                  return poids === null ? "" : pourcent(poids);
+                })()}
+              </td>
+            </tr>
+          )}
         </tbody>
         <tfoot className="border-t-2 border-pop-bleu bg-pop-fond">
           <tr>
@@ -69,6 +103,7 @@ export function TableauBilan({
   totalActif,
   totalPassif,
   ecart,
+  resultat,
   devise = "USD",
 }: {
   actif: Rubriques;
@@ -76,6 +111,8 @@ export function TableauBilan({
   totalActif: number;
   totalPassif: number;
   ecart: number;
+  /** Resultat de l'exercice, affiche au passif : il en fait partie du total. */
+  resultat: number;
   devise?: string;
 }) {
   const equilibre = Math.abs(ecart) <= TOLERANCE_EQUILIBRE;
@@ -103,7 +140,16 @@ export function TableauBilan({
 
       <div className="grid grid-cols-1 divide-y divide-pop-bord lg:grid-cols-2 lg:divide-x lg:divide-y-0">
         <Colonne titre="Actif" rubriques={actif} total={totalActif} />
-        <Colonne titre="Passif" rubriques={passif} total={totalPassif} />
+        <Colonne
+          titre="Passif"
+          rubriques={passif}
+          total={totalPassif}
+          ligneFinale={{
+            libelle: "Resultat de l'exercice",
+            valeur: resultat,
+            note: "Non affecte : il equilibre le passif sans etre une rubrique de la balance.",
+          }}
+        />
       </div>
     </section>
   );
