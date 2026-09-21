@@ -24,6 +24,7 @@ from engine.decaissement import decaissements
 from engine.etats_financiers import etats_financiers
 from engine.indicateurs import indicateurs_prudentiels
 from engine.epargne import synthese_epargne, nb_epargnants
+from engine.budget import suivi_budgetaire
 
 from auth_supabase import (utilisateur_courant, filtrer_par_agence,
                            exiger_role, ROLES_ACCES_TOTAL)
@@ -208,3 +209,33 @@ def endpoint_epargne(arrete: str, user: dict = Depends(utilisateur_courant)):
     s = synthese_epargne(_d(arrete))
     s["nb_epargnants"] = nb_epargnants(_d(arrete))
     return s
+
+
+@app.get("/budget")
+def endpoint_budget(arrete: str,
+                    precedent: str | None = None,
+                    hypothese: str = "H1",
+                    user: dict = Depends(utilisateur_courant)):
+    """Suivi budgétaire d'un arrêté : réalisé mensuel ET cumulé face au budget.
+
+    L'exercice et le mois ne sont PAS des paramètres : ils se déduisent de l'arrêté
+    (cf. engine.budget.suivi_budgetaire). Les recevoir à part permettrait de comparer
+    le réalisé de juillet au budget de mars sans qu'aucun contrôle ne s'en aperçoive.
+
+    Paramètres : `arrete` (AAAA-MM-JJ), `precedent` (arrêté de base du réalisé
+    mensuel, déduit de la base s'il est omis), `hypothese` (défaut « H1 »).
+
+    `precedent` reste fournissable à la main (rejouer un mois avec une autre base),
+    mais son absence n'est pas une erreur : le moteur va chercher le dernier arrêté
+    de l'exercice antérieur au mois, et DIT quand il n'en trouve pas — le niveau
+    mensuel est alors déclaré indisponible au lieu d'afficher un cumul de plusieurs
+    mois en face d'un budget d'un seul.
+    """
+    exiger_role(user, ROLES_ACCES_TOTAL)
+    r = suivi_budgetaire(_d(arrete),
+                         precedent=_d(precedent) if precedent else None,
+                         hypothese=hypothese)
+    # Dates en ISO : le front les affiche et les remet dans l'URL telles quelles.
+    r["arrete"] = r["arrete"].isoformat()
+    r["precedent"] = r["precedent"].isoformat() if r["precedent"] else None
+    return r

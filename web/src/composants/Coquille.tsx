@@ -21,8 +21,8 @@ type Entree = { href: string; libelle: string; pret: boolean; ecriture?: boolean
 const NAVIGATION: Entree[] = [
   { href: "/credit", libelle: "Credit", pret: true },
   { href: "/comptabilite", libelle: "Comptabilite & indicateurs", pret: true },
-  { href: "/epargne", libelle: "Epargne", pret: false },
-  { href: "/budget", libelle: "Budget", pret: false },
+  { href: "/epargne", libelle: "Epargne", pret: true },
+  { href: "/budget", libelle: "Budget", pret: true },
   { href: "/rapports", libelle: "Rapports reglementaires", pret: false },
   // L'import est le point d'entree de la plateforme, mais c'est une ECRITURE :
   // il n'apparait que pour DIRECTION / CDG. Un lien propose puis refuse par

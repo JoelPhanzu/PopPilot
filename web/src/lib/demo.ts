@@ -19,6 +19,8 @@ import type {
   Indicateurs,
   Rubriques,
 } from "@/lib/comptabilite";
+import type { ReponseEpargne } from "@/lib/epargne";
+import type { LigneBudget, ReponseBudget } from "@/lib/budget";
 
 /** Cookie du mode demonstration (aucune valeur secrete : un simple role). */
 export const COOKIE_DEMO = "pp_demo_role";
@@ -314,5 +316,159 @@ export function indicateursDemo(arrete: string): Indicateurs {
       charges: CHARGES_DEMO,
     },
     indicateurs,
+  };
+}
+
+/* ==========================================================================
+   EPARGNE — donnees d'illustration
+   ==========================================================================
+
+   Calees sur le reel documente (CLAUDE.md, arrete du 31/07/2026) : encours
+   total 6 368 439 USD, a vue 1 837 270, a terme 2 909 946, obligatoire
+   1 621 222 ; 169 799 comptes ; 67 147 epargnants.
+
+   La ventilation par DEVISE est construite a l'envers de ce qu'on ferait
+   spontanement : on pose la part USD et la part CDF de chaque type, puis on en
+   DEDUIT le montant converti. Poser les deux cotes a la main laisserait, a la
+   premiere retouche, un total converti qui ne correspond plus a la somme des
+   devises — exactement l'incoherence que l'ecran est cense rendre visible.
+   ========================================================================== */
+
+/** Repartition posee : montant en USD d'origine, montant en CDF d'origine. */
+const EPARGNE_DEMO: Record<string, { usd: number; cdf: number }> = {
+  a_vue: { usd: 1_400_000, cdf: 992_056_312.5 },
+  a_terme: { usd: 2_600_000, cdf: 703_189_987.5 },
+  obligatoire: { usd: 1_100_000, cdf: 1_182_522_412.5 },
+};
+
+/** Part de l'epargne portee par les groupes (Transitoire Groupe + Caution). */
+const EPARGNE_GROUPE_DEMO = 323_400.0;
+
+const NB_COMPTES_DEMO = 169_799;
+const NB_EPARGNANTS_DEMO = 67_147;
+
+/** Synthese epargne de demonstration, dans le format EXACT du moteur. */
+export function epargneDemo(arrete: string): ReponseEpargne {
+  const taux = TAUX_DEMO;
+
+  const parType: Record<string, number> = {};
+  const parTypeDevise: Record<string, number> = {};
+  const parDevise: Record<string, number> = { USD: 0, CDF: 0 };
+
+  for (const [type, { usd, cdf }] of Object.entries(EPARGNE_DEMO)) {
+    // Montant HOMOGENE : le CDF est ramene en USD au taux de l'arrete.
+    parType[type] = usd + cdf / taux;
+    // Montants EN DEVISE D'ORIGINE : jamais melanges, jamais totalises.
+    parTypeDevise[`${type}/USD`] = usd;
+    parTypeDevise[`${type}/CDF`] = cdf;
+    parDevise.USD += usd;
+    parDevise.CDF += cdf;
+  }
+
+  const total = Object.values(parType).reduce((s, v) => s + v, 0);
+
+  return {
+    date_arrete: arrete,
+    devise_totaux: "USD",
+    taux_change: taux,
+    encours_total: total,
+    nb_comptes: NB_COMPTES_DEMO,
+    nb_epargnants: NB_EPARGNANTS_DEMO,
+    par_type: parType,
+    par_devise_origine: parDevise,
+    par_type_devise: parTypeDevise,
+    epargne_groupe: EPARGNE_GROUPE_DEMO,
+    depots_a_vue: parType.a_vue ?? 0,
+    depots_a_terme: parType.a_terme ?? 0,
+    depots_obligatoire: parType.obligatoire ?? 0,
+  };
+}
+
+/* ==========================================================================
+   BUDGET — donnees d'illustration
+   ==========================================================================
+
+   Construction volontairement mecanique : on pose, par ligne, le budget
+   MENSUEL et le REALISE CUMULE, puis TOUT le reste en est deduit — budget
+   annuel, budget cumule a date, realise du mois, ecarts, taux. Poser les
+   douze nombres d'une ligne a la main garantirait qu'ils finissent par ne
+   plus se repondre, et l'ecran affiche precisement ces rapprochements.
+
+   Les taux sont des RAPPORTS, comme ceux du moteur (1.25 = 125 %) — pas des
+   pourcentages. C'est le piege documente dans lib/budget.ts, et les donnees
+   de demonstration doivent le reproduire fidelement, sans quoi elles
+   masqueraient le defaut qu'on cherche a eviter.
+   ========================================================================== */
+
+type LigneDemo = {
+  ligne: string;
+  sens: "charge" | "produit";
+  /** Budget d'UN mois (budget non lineaire simplifie : constant ici). */
+  budgetMensuel: number;
+  /** Realise cumule depuis janvier, a l'arrete. */
+  realiseCumule: number;
+  /** Realise cumule a la fin du mois precedent (base du realise mensuel). */
+  realiseCumulePrecedent: number;
+};
+
+const BUDGET_DEMO: LigneDemo[] = [
+  { ligne: "Frais de personnel", sens: "charge", budgetMensuel: 38_000, realiseCumule: 258_400, realiseCumulePrecedent: 221_600 },
+  { ligne: "Loyers et charges locatives", sens: "charge", budgetMensuel: 9_500, realiseCumule: 68_400, realiseCumulePrecedent: 58_600 },
+  { ligne: "Transport et deplacements", sens: "charge", budgetMensuel: 4_200, realiseCumule: 33_900, realiseCumulePrecedent: 28_100 },
+  { ligne: "Fournitures et consommables", sens: "charge", budgetMensuel: 2_800, realiseCumule: 16_450, realiseCumulePrecedent: 14_300 },
+  { ligne: "Dotations aux provisions", sens: "charge", budgetMensuel: 14_000, realiseCumule: 96_200, realiseCumulePrecedent: 82_400 },
+  { ligne: "Interets sur credits clientele", sens: "produit", budgetMensuel: 96_000, realiseCumule: 648_300, realiseCumulePrecedent: 556_900 },
+  { ligne: "Commissions et frais de dossier", sens: "produit", budgetMensuel: 18_500, realiseCumule: 121_400, realiseCumulePrecedent: 104_200 },
+  { ligne: "Autres produits d'exploitation", sens: "produit", budgetMensuel: 4_000, realiseCumule: 25_620, realiseCumulePrecedent: 22_050 },
+];
+
+/** Suivi budgetaire de demonstration, dans le format EXACT du moteur. */
+export function budgetDemo(arrete: string): ReponseBudget {
+  const annee = Number(arrete.slice(0, 4));
+  const mois = Number(arrete.slice(5, 7));
+
+  const lignes: LigneBudget[] = BUDGET_DEMO.map((d) => {
+    const budgetMois = d.budgetMensuel;
+    const budgetAnnuel = d.budgetMensuel * 12;
+    const budgetCumuleADate = d.budgetMensuel * mois;
+    const realiseMois = d.realiseCumule - d.realiseCumulePrecedent;
+
+    // Un denominateur nul ne donne PAS zero : il donne null, comme le moteur.
+    const rapport = (num: number, den: number) => (den ? num / den : null);
+
+    return {
+      ligne: d.ligne,
+      sens: d.sens,
+      budget_mois: budgetMois,
+      realise_mois: realiseMois,
+      ecart_mois: realiseMois - budgetMois,
+      pct_realisation: rapport(realiseMois, budgetMois),
+      realise_cumule: d.realiseCumule,
+      budget_annuel: budgetAnnuel,
+      ecart_annuel: d.realiseCumule - budgetAnnuel,
+      pct_progression: rapport(d.realiseCumule, budgetAnnuel),
+      budget_cumule_a_date: budgetCumuleADate,
+      ecart_a_date: d.realiseCumule - budgetCumuleADate,
+      pct_realisation_a_date: rapport(d.realiseCumule, budgetCumuleADate),
+    };
+  });
+
+  // Base du realise mensuel : le dernier jour du mois precedent. En janvier il
+  // n'y en a pas, et c'est normal (le cumul repart de zero) — meme regle que
+  // engine.budget.arrete_precedent.
+  const precedent =
+    mois === 1
+      ? null
+      : new Date(Date.UTC(annee, mois - 1, 0)).toISOString().slice(0, 10);
+
+  return {
+    arrete,
+    exercice: annee,
+    mois,
+    hypothese: "H1",
+    precedent,
+    niveau_mensuel_disponible: true,
+    motif_mensuel_absent: null,
+    lignes,
   };
 }
