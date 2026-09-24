@@ -31,19 +31,23 @@ def test_schema_cree_toutes_les_tables():
 
     On ne compte pas les tables (un nombre en dur se périme à chaque ajout, et c'est
     ce qui était arrivé : 28 attendu pour 30 réelles). On compare le jeu de tables du
-    modèle à celui de supabase/01_schema.sql — c'est la dérive ORM/base qui fait mal :
-    une colonne ou une table présente d'un seul côté casse l'API en silence.
+    modèle à celui de TOUS les scripts supabase/*.sql (01_schema, puis les ajouts
+    additifs 06, 07… en « CREATE TABLE IF NOT EXISTS ») — c'est la dérive ORM/base qui
+    fait mal : une colonne ou une table présente d'un seul côté casse l'API en silence.
     """
     s = _fresh()
-    sql = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                       "..", "supabase", "01_schema.sql")
+    dossier = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                           "..", "supabase")
     orm = set(Base.metadata.tables)
     assert orm, "aucune table dans le modèle ORM"
 
-    if os.path.exists(sql):
+    if os.path.isdir(dossier):
+        import glob
         import re
-        deployees = set(re.findall(r"CREATE TABLE (\w+)",
-                                   open(sql, encoding="utf-8").read()))
+        deployees = set()
+        for sql in sorted(glob.glob(os.path.join(dossier, "*.sql"))):
+            deployees |= set(re.findall(r"CREATE TABLE (?:IF NOT EXISTS )?(\w+)",
+                                        open(sql, encoding="utf-8").read()))
         assert orm == deployees, (
             f"dérive ORM/Supabase — seulement dans l'ORM : {sorted(orm - deployees)} ; "
             f"seulement dans le SQL : {sorted(deployees - orm)}")

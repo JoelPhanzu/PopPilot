@@ -98,6 +98,24 @@ function restreindreAUneAgence(lignes: LigneAgence[]): GlobalPar {
   };
 }
 
+/**
+ * Les moteurs (engine/par.py) exposent les taux en FRACTION (pct_par30 = 0.1099),
+ * alors que tout l'ecran — `pourcent()`, les donnees de demonstration, le total
+ * recalcule d'un role AGENCE — raisonne en POURCENTAGE (10.99). Sans cette
+ * conversion, un PAR30 de 10,99 % s'affichait « 0,11 % » des que la page lisait
+ * l'API reelle. Appliquee une fois, a l'entree des reponses de l'API, et nulle
+ * part ailleurs.
+ */
+function enPourcents(reponse: ReponsePar): ReponsePar {
+  const x100 = (v: number | undefined) => (typeof v === "number" ? v * 100 : v);
+  const g = reponse.global;
+  return {
+    ...reponse,
+    global: { ...g, pct_par1: x100(g.pct_par1), pct_par30: x100(g.pct_par30), pct_par90: x100(g.pct_par90) },
+    agences: reponse.agences.map((a) => ({ ...a, pct_par30: a.pct_par30 * 100 })),
+  };
+}
+
 /** Applique le cloisonnement a une reponse /par, quelle qu'en soit la source. */
 function cloisonner(reponse: ReponsePar, profil: Profil): ReponsePar {
   const agences = filtrerParAgence(profil, reponse.agences, "agence");
@@ -171,7 +189,7 @@ export async function chargerTableauCredit(
   return {
     arrete,
     source: "api",
-    par: cloisonner(reponse.donnees, profil),
+    par: cloisonner(enPourcents(reponse.donnees), profil),
     provisions,
     noteProvisions,
     erreurApi: null,
@@ -345,7 +363,7 @@ export async function chargerTableauCreditFiltre(
     arrete,
     source: "api",
     par: cloisonner(
-      { arrete: d.arrete, role: d.role, global: d.global, agences: d.agences },
+      enPourcents({ arrete: d.arrete, role: d.role, global: d.global, agences: d.agences }),
       profil,
     ),
     provisions: total

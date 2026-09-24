@@ -54,6 +54,7 @@ from ingest.import_credit import importer_credit
 from ingest.import_epargne import importer_epargne
 from ingest.import_budget import importer_mapping_budget
 from ingest.import_objectifs import importer_objectifs
+from ingest.import_compte_resultat_agence import importer_compte_resultat_agence
 
 from auth_supabase import (ROLES_ACCES_TOTAL, ROLES_ECRITURE, exiger_role,
                            utilisateur_courant)
@@ -121,6 +122,14 @@ DOMAINES: dict[str, Domaine] = {
              "compte comptable, colonne C = libellé de la ligne budgétaire (colonne B "
              "libre). SANS ce mapping, le réalisé du suivi budgétaire vaut 0,00 sur "
              "toutes les lignes.",
+    ),
+    "compte_resultat_agence": Domaine(
+        libelle="Compte de résultat par agence (fichier isolé du CDG)",
+        fonction=importer_compte_resultat_agence, extensions=(".xlsx", ".xlsm"),
+        requis=("date_arrete",), optionnels=("feuille",), journalise=True,
+        aide="Fichier mensuel COMPTE_RESULTAT_<mois>_isolé.xlsx, feuille Feuil2 : colonne A = "
+             "poste, B..G = Victoire, Ozone, Goma, Lubumbashi, Masina, Gombe, H = MICROPOP. "
+             "Refusé si la colonne MICROPOP ne redonne pas la somme des 6 agences.",
     ),
     "budget": Domaine(
         libelle="Budget annuel (charges et produits consolidés)",

@@ -34,6 +34,8 @@ from configuration import routeur as routeur_configuration
 from export_excel import routeur as routeur_export
 from rapports import routeur as routeur_rapports
 from filtres_credit import routeur as routeur_filtres_credit
+from sage import routeur as routeur_sage
+from primes import routeur as routeur_primes
 
 @asynccontextmanager
 async def _cycle_de_vie(_app: FastAPI):
@@ -91,6 +93,14 @@ app.include_router(routeur_rapports)
 # Tableau de bord credit FILTRE (agence, sexe, produit, duree, client, agent,
 # superviseur). Enchaine moteur_filtres + les moteurs PAR/provisions existants.
 app.include_router(routeur_filtres_credit)
+
+# Grand livre CBS -> fichier SAGE (taux journalier de la plateforme). Enchaine
+# engine/traitement_sage ; journalise dans journal_sage_traite.
+app.include_router(routeur_sage)
+
+# Primes hors « AC et SUP » : direction, fonctions support, recouvrement.
+# Calculent via engine/moteur_primes ; n'ecrivent rien.
+app.include_router(routeur_primes)
 
 
 @app.exception_handler(ValueError)

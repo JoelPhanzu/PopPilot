@@ -12,8 +12,10 @@ SQLAlchemy comme ORM → migration PostgreSQL (Phase 6) indolore.
 """
 from __future__ import annotations
 
+import datetime
+
 from sqlalchemy import (
-    Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Uuid,
+    JSON, Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, Uuid,
     UniqueConstraint, Index, create_engine,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -505,6 +507,118 @@ class ParamMappingFina(Base):
     agregat = Column(String, nullable=False)
     feuille = Column(String)
     code_case = Column(String)                          # V1.F0a.xx
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AMÉLIORATIONS (chantiers 1-7) — tables créées par supabase/06 et 07.
+# Déclarées ici À L'IDENTIQUE du SQL pour que le code les lise et les écrive. En
+# production, create_all ne les recrée pas (elles existent : IF NOT EXISTS côté SQL,
+# checkfirst côté SQLAlchemy). En SQLite (tests), create_all les crée.
+# ─────────────────────────────────────────────────────────────────────────────
+class CompteResultatAgence(Base):
+    """Compte de résultat isolé par agence (fichier mensuel du CDG) — poste × agence × mois."""
+    __tablename__ = "compte_resultat_agence"
+    id = Column(Integer, primary_key=True)
+    date_arrete = Column(Date, nullable=False)
+    poste = Column(String, nullable=False)
+    agence = Column(String, nullable=False)
+    montant = Column(Float)
+    devise = Column(String, default="USD")
+    __table_args__ = (UniqueConstraint("date_arrete", "poste", "agence", name="uq_cra"),)
+
+
+class FaitRemboursementEncaisse(Base):
+    """Remboursements encaissés, hiérarchie (agent/superviseur/agence) résolue à l'import."""
+    __tablename__ = "fait_remboursement_encaisse"
+    id = Column(Integer, primary_key=True)
+    date_arrete = Column(Date, nullable=False)
+    date_remboursement = Column(Date)
+    numero_dossier = Column(String, nullable=False)
+    numero_client = Column(String)
+    numero_echeance = Column(String)
+    capital_rembourse = Column(Float)
+    interets_rembourses = Column(Float)
+    penalites_rembourses = Column(Float)
+    agent_credit = Column(String)
+    superviseur = Column(String)
+    agence = Column(String)
+
+
+class JournalSageTraite(Base):
+    """Trace de chaque traitement du grand livre CBS pour SAGE."""
+    __tablename__ = "journal_sage_traite"
+    id = Column(Integer, primary_key=True)
+    date_traitement = Column(Date, nullable=False)
+    periode = Column(String)
+    fichier_source = Column(String)
+    lignes_entree = Column(Integer)
+    lignes_sortie = Column(Integer)
+    statut = Column(String)                  # OK / ALERTE / ECHEC
+    message = Column(String)
+
+
+class CampagnePrime(Base):
+    """Paramètres de prime appliqués à une période (snapshot figé, traçabilité)."""
+    __tablename__ = "campagne_prime"
+    id = Column(Integer, primary_key=True)
+    periode = Column(Date, nullable=False, unique=True)
+    date_calcul = Column(Date)
+    parametres = Column(JSON)                # JSONB côté Supabase
+    valide_par = Column(String)
+
+
+class EljoConversation(Base):
+    """Eljo Smart : chaque question et la réponse donnée (valeur exacte du moteur)."""
+    __tablename__ = "eljo_conversation"
+    id = Column(Integer, primary_key=True)
+    auth_uid = Column(Uuid)
+    login = Column(String)
+    role = Column(String)
+    agence = Column(String)
+    question = Column(Text, nullable=False)
+    intention = Column(String)
+    reponse = Column(Text)
+    valeur = Column(Float)
+    horodatage = Column(DateTime, default=datetime.datetime.now)
+
+
+class ArchiveRapport(Base):
+    """Bibliothèque de rapports, remplaçables (version + remplace_id = historique)."""
+    __tablename__ = "archive_rapport"
+    id = Column(Integer, primary_key=True)
+    titre = Column(String, nullable=False)
+    type_rapport = Column(String)
+    periode = Column(String)
+    fichier_url = Column(String)
+    format = Column(String)
+    version = Column(Integer, default=1)
+    depose_par = Column(String)
+    date_depot = Column(DateTime, default=datetime.datetime.now)
+    remplace_id = Column(Integer)
+
+
+class SerieIndicateur(Base):
+    """Séries temporelles d'indicateurs (historiques importés + calculs mensuels)."""
+    __tablename__ = "serie_indicateur"
+    id = Column(Integer, primary_key=True)
+    indicateur = Column(String, nullable=False)
+    date_arrete = Column(Date, nullable=False)
+    agence = Column(String)                  # NULL = consolidé
+    valeur = Column(Float)
+    unite = Column(String)
+    source = Column(String)
+
+
+class ArchiveDonnees(Base):
+    """Données d'une archive éditables en ligne, cellule par cellule (modif tracée)."""
+    __tablename__ = "archive_donnees"
+    id = Column(Integer, primary_key=True)
+    archive_id = Column(Integer, ForeignKey("archive_rapport.id"))
+    ligne = Column(Integer, nullable=False)
+    colonne = Column(String, nullable=False)
+    valeur = Column(Text)
+    modifie_par = Column(String)
+    modifie_le = Column(DateTime, default=datetime.datetime.now)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

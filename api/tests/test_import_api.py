@@ -405,8 +405,9 @@ def test_journal_et_catalogue_respectent_les_roles():
         cles = {d["cle"] for d in catalogue["domaines"]}
         # « budget_mapping » est le mapping compte→ligne, sans lequel le suivi
         # budgetaire affiche un realise a 0,00 sur toutes les lignes.
+        # « compte_resultat_agence » : fichier mensuel du CDG, base des primes de direction.
         assert cles == {"credit", "balance", "epargne", "objectifs",
-                        "budget", "budget_mapping"}, cles
+                        "budget", "budget_mapping", "compte_resultat_agence"}, cles
     finally:
         _nettoyer()
 

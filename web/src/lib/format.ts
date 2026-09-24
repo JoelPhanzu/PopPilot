@@ -44,8 +44,9 @@ export function entier(valeur: number | null | undefined): string {
 }
 
 /**
- * Taux en pourcentage. L'API renvoie deja des pourcentages (pct_par30 = 10.99),
- * pas des fractions : on ne multiplie donc PAS par 100.
+ * Taux en pourcentage (10.99, pas 0.1099) : on ne multiplie donc PAS par 100.
+ * Les moteurs renvoient des fractions ; elles sont converties a l'entree des
+ * reponses de l'API (cf. `enPourcents` dans lib/credit.ts).
  */
 export function pourcent(valeur: number | null | undefined): string {
   if (valeur === null || valeur === undefined || !Number.isFinite(valeur)) return "—";

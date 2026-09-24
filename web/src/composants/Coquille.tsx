@@ -13,10 +13,13 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { Logo, Signature } from "@/composants/Logo";
 import { BoutonDeconnexion } from "@/composants/BoutonDeconnexion";
-import { LIBELLES_ROLE, peutEcrire, porteeAffichee, type Profil } from "@/lib/roles";
+import { LIBELLES_ROLE, aAccesTotal, peutEcrire, porteeAffichee, type Profil } from "@/lib/roles";
 
-/** `ecriture` : entree reservee aux roles qui peuvent alimenter le socle. */
-type Entree = { href: string; libelle: string; pret: boolean; ecriture?: boolean };
+/**
+ * `ecriture` : entree reservee aux roles qui peuvent alimenter le socle.
+ * `total` : entree reservee aux roles a acces total (donnees institutionnelles).
+ */
+type Entree = { href: string; libelle: string; pret: boolean; ecriture?: boolean; total?: boolean };
 
 const NAVIGATION: Entree[] = [
   { href: "/credit", libelle: "Credit", pret: true },
@@ -24,10 +27,13 @@ const NAVIGATION: Entree[] = [
   { href: "/epargne", libelle: "Epargne", pret: true },
   { href: "/budget", libelle: "Budget", pret: true },
   { href: "/rapports", libelle: "Rapports reglementaires", pret: true },
+  // Primes : nominatives et institutionnelles — DIRECTION, CDG, AUDIT seulement.
+  { href: "/primes", libelle: "Primes", pret: true, total: true },
   // L'import est le point d'entree de la plateforme, mais c'est une ECRITURE :
   // il n'apparait que pour DIRECTION / CDG. Un lien propose puis refuse par
   // l'API donnerait l'impression d'une panne plutot que d'une regle.
   { href: "/import", libelle: "Import CBS", pret: true, ecriture: true },
+  { href: "/sage", libelle: "Traitement SAGE", pret: true, ecriture: true },
   // La configuration engage tous les calculs : meme regle que l'import, elle
   // n'apparait que pour les roles qui alimentent le socle.
   { href: "/configuration", libelle: "Configuration", pret: true, ecriture: true },
@@ -55,7 +61,9 @@ export function Coquille({
 
         <nav className="px-3 pb-4 lg:flex-1" aria-label="Domaines">
           <ul className="space-y-1">
-            {NAVIGATION.filter((e) => !e.ecriture || peutEcrire(profil)).map((entree) => {
+            {NAVIGATION.filter(
+              (e) => (!e.ecriture || peutEcrire(profil)) && (!e.total || aAccesTotal(profil)),
+            ).map((entree) => {
               const courant = entree.href === actif;
               if (!entree.pret) {
                 return (

@@ -36,6 +36,7 @@ SUITES = [
     ("test_rapports_api.py",       "Rapports reglementaires (POST /rapports)"),
     ("test_phase1_par.py",         "Phase 1 - credit"),
     ("test_filtres_credit.py",     "Credit filtre (GET /credit/filtre)"),
+    ("test_sage_primes.py",        "SAGE, compte de resultat agence, primes"),
     ("test_phase2_compta.py",      "Phase 2 - comptabilite"),
     ("test_phase3_indicateurs.py", "Phase 3 - indicateurs"),
     ("test_epargne.py",            "Epargne"),
