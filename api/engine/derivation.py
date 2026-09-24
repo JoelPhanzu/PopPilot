@@ -56,9 +56,12 @@ def deriver_provisions(date_arrete: dt.date, db_path="socle/micropop.db") -> dic
     ).scalars().all():
         manuelles[pm.agence.strip().upper()] = (pm.montant, pm.note)
 
+    # Seules colonnes lues ci-dessous (lignes SQL simples : ~10x plus rapide que les
+    # objets ORM complets de 36 colonnes depuis Supabase — mêmes chiffres).
     prets = s.execute(
-        select(FaitCredit).where(FaitCredit.date_arrete == date_arrete)
-    ).scalars().all()
+        select(FaitCredit.agence, FaitCredit.encours, FaitCredit.jours_de_retard)
+        .where(FaitCredit.date_arrete == date_arrete)
+    ).all()
     s.close()
 
     total = 0.0
@@ -96,7 +99,8 @@ def croissance_portefeuille(date_arrete: dt.date, date_arrete_precedent: dt.date
     s = get_session(db_path)
 
     def encours_par_agence(d):
-        rows = s.execute(select(FaitCredit).where(FaitCredit.date_arrete == d)).scalars().all()
+        rows = s.execute(select(FaitCredit.agence, FaitCredit.encours)
+                         .where(FaitCredit.date_arrete == d)).all()
         out = {"__global__": 0.0}
         for p in rows:
             out["__global__"] += p.encours or 0.0

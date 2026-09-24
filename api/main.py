@@ -33,6 +33,7 @@ from import_cbs import routeur as routeur_import
 from configuration import routeur as routeur_configuration
 from export_excel import routeur as routeur_export
 from rapports import routeur as routeur_rapports
+from filtres_credit import routeur as routeur_filtres_credit
 
 @asynccontextmanager
 async def _cycle_de_vie(_app: FastAPI):
@@ -86,6 +87,10 @@ app.include_router(routeur_export)
 # Rapports reglementaires BCC (FINA, AML/LBC-FT, systeme de paiement).
 # Ne touchent PAS au socle : une generation le lit, elle ne l'ecrit pas.
 app.include_router(routeur_rapports)
+
+# Tableau de bord credit FILTRE (agence, sexe, produit, duree, client, agent,
+# superviseur). Enchaine moteur_filtres + les moteurs PAR/provisions existants.
+app.include_router(routeur_filtres_credit)
 
 
 @app.exception_handler(ValueError)

@@ -57,12 +57,19 @@ def _agrege(prets, designation, niveau) -> LignePAR:
     return r
 
 
+# Colonnes lues par calculer_par/_agrege. fait_credit en compte 36 : charger les objets
+# ORM complets depuis Supabase prenait ~60-85 s par arrêté (bande passante). Des lignes
+# SQL simples (Row : accès par attribut) sur ces colonnes suffisent — mêmes chiffres.
+_COLONNES_PAR = (FaitCredit.agence, FaitCredit.superviseur, FaitCredit.agent_credit,
+                 FaitCredit.numero_client, FaitCredit.encours, FaitCredit.jours_de_retard)
+
+
 def calculer_par(date_arrete: dt.date, db_path="socle/micropop.db") -> dict:
     """Renvoie {'global': LignePAR, 'agences': [LignePAR...], 'superviseurs':..., 'agents':...}."""
     s = get_session(db_path)
     prets = s.execute(
-        select(FaitCredit).where(FaitCredit.date_arrete == date_arrete)
-    ).scalars().all()
+        select(*_COLONNES_PAR).where(FaitCredit.date_arrete == date_arrete)
+    ).all()
     s.close()
 
     if not prets:

@@ -21,8 +21,19 @@ import { TableauAgences } from "@/composants/TableauAgences";
 import { SelecteurArrete } from "@/composants/SelecteurArrete";
 import { BandeauSource } from "@/composants/BandeauSource";
 import { BoutonExport } from "@/composants/BoutonExport";
+import { BarreFiltresCredit } from "@/composants/BarreFiltresCredit";
 import { sessionCourante } from "@/lib/session";
-import { chargerTableauCredit, ARRETE_PAR_DEFAUT } from "@/lib/credit";
+import {
+  chargerTableauCredit,
+  chargerTableauCreditFiltre,
+  chargerValeursFiltres,
+  filtresActifs,
+  lireFiltres,
+  ARRETE_PAR_DEFAUT,
+  type TableauCredit,
+  type TableauCreditFiltre,
+  type ValeursFiltres,
+} from "@/lib/credit";
 import { aAccesTotal } from "@/lib/roles";
 import { dateArreteValide, dateLongue, entier, montant, pourcent, part } from "@/lib/format";
 
@@ -37,7 +48,7 @@ export const dynamic = "force-dynamic";
 export default async function PageCredit({
   searchParams,
 }: {
-  searchParams: Promise<{ arrete?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { profil, jeton, avertissement } = await sessionCourante();
 
@@ -60,11 +71,23 @@ export default async function PageCredit({
     redirect("/login?suite=/credit");
   }
 
-  const { arrete: demande } = await searchParams;
+  const sp = await searchParams;
+  const demande = sp.arrete;
   const arrete =
     typeof demande === "string" && dateArreteValide(demande) ? demande : ARRETE_PAR_DEFAUT;
 
-  const tableau = await chargerTableauCredit(arrete, profil, jeton);
+  // Sans filtre : chemin historique /par + /provisions, inchange. Avec filtre :
+  // GET /credit/filtre, qui enchaine moteur_filtres puis les MEMES moteurs.
+  const filtres = lireFiltres(sp);
+  const filtre = filtresActifs(filtres);
+  const [tableau, valeurs]: [TableauCredit | TableauCreditFiltre, ValeursFiltres | null] =
+    await Promise.all([
+      filtre
+        ? chargerTableauCreditFiltre(arrete, filtres, profil, jeton)
+        : chargerTableauCredit(arrete, profil, jeton),
+      chargerValeursFiltres(arrete, jeton),
+    ]);
+  const selection = filtre ? (tableau as TableauCreditFiltre).selection : null;
   const g = tableau.par.global;
   const agences = tableau.par.agences;
   const total = aAccesTotal(profil);
@@ -98,13 +121,31 @@ export default async function PageCredit({
               <p className="text-xs text-pop-gris">
                 Source&nbsp;:{" "}
                 {tableau.source === "api"
-                ? "moteurs valides (GET /par, /provisions)"
+                ? filtre
+                  ? "moteurs valides (GET /credit/filtre)"
+                  : "moteurs valides (GET /par, /provisions)"
                 : "donnees de demonstration"}
               </p>
             </div>
           </header>
 
           <SelecteurArrete key={tableau.arrete} arrete={tableau.arrete} />
+
+          {valeurs && (
+            <BarreFiltresCredit
+              key={JSON.stringify(filtres)}
+              valeurs={valeurs}
+              filtres={filtres}
+              agenceFixe={total ? null : profil.agence ?? null}
+            />
+          )}
+
+          {selection && (
+            <p className="text-sm text-pop-gris">
+              Selection&nbsp;: <span className="chiffres text-pop-encre">{entier(selection.nb_prets)}</span>{" "}
+              prets retenus par les filtres, calcules par les memes moteurs que le tableau complet.
+            </p>
+          )}
 
           <BandeauSource source={tableau.source} erreurApi={tableau.erreurApi} />
 

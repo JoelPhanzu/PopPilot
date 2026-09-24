@@ -191,3 +191,173 @@ export async function chargerTableauCredit(
  * recent devient la reference.
  */
 export const ARRETE_PAR_DEFAUT = "2026-05-31";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tableau de bord FILTRE — GET /credit/filtre (api/filtres_credit.py).
+//
+// Additif : sans filtre, la page garde /par + /provisions. Des qu'un axe est
+// choisi, les memes moteurs (PAR, bareme) tournent sur la selection de prets
+// faite par engine/moteur_filtres AVANT calcul. Le front ne filtre rien.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Axes de filtrage, tels qu'ils vivent dans l'URL. */
+export type FiltresCredit = {
+  agence?: string;
+  sexe?: string;
+  produits?: string[];
+  duree?: string;
+  client?: string;
+  agent?: string;
+  superviseur?: string;
+};
+
+export const CLES_FILTRES = [
+  "agence",
+  "sexe",
+  "produits",
+  "duree",
+  "client",
+  "agent",
+  "superviseur",
+] as const;
+
+/** Valeurs des menus deroulants (GET /credit/filtres/valeurs), deja cloisonnees. */
+export type ValeursFiltres = {
+  agences: string[];
+  agents: string[];
+  superviseurs: string[];
+  produits: string[];
+  sexes: string[];
+  durees: string[];
+};
+
+type ReponseFiltre = {
+  arrete: string;
+  role: string;
+  portee: string;
+  filtres: Record<string, unknown>;
+  nb_prets_selectionnes: number;
+  global: GlobalPar;
+  provisions: {
+    bareme: number;
+    complement_manuel: number;
+    total: number;
+    complement_manuel_inclus: boolean;
+    complements_exclus: string[];
+  };
+  agences: (LigneAgence & { provision: number })[];
+};
+
+export type TableauCreditFiltre = TableauCredit & {
+  selection: { nb_prets: number; noteComplement: string | null } | null;
+};
+
+/** Lit les filtres de l'URL ; une valeur vide = pas de filtre. */
+export function lireFiltres(
+  sp: Record<string, string | string[] | undefined>,
+): FiltresCredit {
+  const un = (k: string) => {
+    const v = sp[k];
+    const s = Array.isArray(v) ? v[0] : v;
+    return s && s.trim() ? s.trim() : undefined;
+  };
+  const brut = sp.produits;
+  const produits = (Array.isArray(brut) ? brut : brut ? [brut] : []).filter((p) => p.trim());
+  return {
+    agence: un("agence"),
+    sexe: un("sexe"),
+    produits: produits.length ? produits : undefined,
+    duree: un("duree"),
+    client: un("client"),
+    agent: un("agent"),
+    superviseur: un("superviseur"),
+  };
+}
+
+export function filtresActifs(f: FiltresCredit): boolean {
+  return CLES_FILTRES.some((k) => (k === "produits" ? !!f.produits?.length : !!f[k]));
+}
+
+function requeteFiltres(arrete: string, f: FiltresCredit): string {
+  const q = new URLSearchParams({ arrete });
+  for (const k of CLES_FILTRES) {
+    if (k === "produits") f.produits?.forEach((p) => q.append("produits", p));
+    else if (f[k]) q.set(k, f[k] as string);
+  }
+  return q.toString();
+}
+
+/** Menus deroulants. null si l'API ne repond pas : on n'invente pas de liste. */
+export async function chargerValeursFiltres(
+  arrete: string,
+  jeton: string | null,
+): Promise<ValeursFiltres | null> {
+  const r = await appelerApi<ValeursFiltres>(
+    `/credit/filtres/valeurs?arrete=${encodeURIComponent(arrete)}`,
+    jeton,
+  );
+  return r.ok ? r.donnees : null;
+}
+
+/**
+ * Tableau de bord sur une selection de prets. Meme forme que
+ * `chargerTableauCredit` : les cartes, le graphique et le tableau ne savent
+ * pas qu'ils affichent une selection.
+ *
+ * Provisions : comme sur le chemin non filtre, elles ne sont montrees qu'aux
+ * roles a acces total (l'API les calcule pour tous ; l'ecran reste aligne sur
+ * la regle de /provisions).
+ */
+export async function chargerTableauCreditFiltre(
+  arrete: string,
+  filtres: FiltresCredit,
+  profil: Profil,
+  jeton: string | null,
+): Promise<TableauCreditFiltre> {
+  const r = await appelerApi<ReponseFiltre>(
+    `/credit/filtre?${requeteFiltres(arrete, filtres)}`,
+    jeton,
+  );
+
+  if (!r.ok) {
+    return {
+      arrete,
+      source: "api",
+      par: { arrete, role: profil.role, global: {}, agences: [] },
+      provisions: null,
+      noteProvisions: null,
+      erreurApi: profil.demo
+        ? `Les filtres interrogent les moteurs : indisponibles en mode demonstration. (${r.erreur})`
+        : r.erreur,
+      selection: null,
+    };
+  }
+
+  const d = r.donnees;
+  const total = aAccesTotal(profil);
+  const p = d.provisions;
+  const noteComplement = p.complements_exclus.length
+    ? `Complement manuel DAF (${p.complements_exclus.join(", ")}) exclu : il est saisi par agence ` +
+      "et ne se repartit ni par sexe, ni par produit, ni par agent."
+    : null;
+
+  return {
+    arrete,
+    source: "api",
+    par: cloisonner(
+      { arrete: d.arrete, role: d.role, global: d.global, agences: d.agences },
+      profil,
+    ),
+    provisions: total
+      ? {
+          provision_capital_totale: p.total,
+          par_agence: Object.fromEntries(d.agences.map((a) => [a.agence, a.provision])),
+        }
+      : null,
+    noteProvisions: total
+      ? noteComplement ?? "Bareme reglementaire applique pret par pret a la selection."
+      : "Les provisions sont un agregat institution : reserve aux roles DIRECTION, CDG et AUDIT.",
+    erreurApi: null,
+    selection: { nb_prets: d.nb_prets_selectionnes, noteComplement },
+  };
+}
