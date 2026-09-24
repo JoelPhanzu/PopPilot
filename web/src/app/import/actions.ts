@@ -35,6 +35,7 @@ const CHAMPS = [
   "devise",
   "exercice",
   "hypothese",
+  "remplacer",
 ] as const;
 
 export async function importerFichier(

@@ -64,6 +64,7 @@ export const LIBELLES_CHAMP: Record<string, string> = {
   devise: "Devise",
   exercice: "Exercice",
   hypothese: "Hypothese",
+  remplacer: "Remplacer les taux existants",
 };
 
 /** Precisions affichees sous chaque champ — la doctrine, la ou elle s'applique. */
@@ -75,6 +76,7 @@ export const AIDES_CHAMP: Record<string, string> = {
   devise: "La balance USD et la balance CDF d'un meme arrete cohabitent sans s'ecraser.",
   exercice: "Annee budgetaire (ex. 2026).",
   hypothese: "Variante du budget (H1 par defaut).",
+  remplacer: "Laisser vide. Ecrire « oui » seulement pour ecraser des taux deja en base.",
 };
 
 /** Champs qui doivent s'afficher comme un calendrier plutot qu'un texte libre. */

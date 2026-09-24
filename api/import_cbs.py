@@ -55,6 +55,8 @@ from ingest.import_epargne import importer_epargne
 from ingest.import_budget import importer_mapping_budget
 from ingest.import_objectifs import importer_objectifs
 from ingest.import_compte_resultat_agence import importer_compte_resultat_agence
+from ingest.import_taux import importer_taux
+from ingest.import_remboursements import importer_remboursements
 
 from auth_supabase import (ROLES_ACCES_TOTAL, ROLES_ECRITURE, exiger_role,
                            utilisateur_courant)
@@ -108,7 +110,12 @@ DOMAINES: dict[str, Domaine] = {
         fonction=importer_objectifs, extensions=TABLEUR,
         requis=("date_effet",), optionnels=(), journalise=False,
         aide="Double source : liste des agents (détection des orphelins) et leurs objectifs. "
-             "Versionné à date d'effet : le roster de mai ne vaut que pour mai.",
+             "Versionné à date d'effet : le roster de mai ne vaut que pour mai (date d'effet = "
+             "1er du mois). Feuille « OBJECTIF », ligne 1 = en-têtes, une ligne par agent : "
+             "A Agence | B Superviseur | C Agent de crédit | D Nombre à décaisser | E Volume | "
+             "F Portefeuille (encours) | G Portefeuille (nb clients) | H PAR (0,05 = 5 %). "
+             "Noms d'agence, de superviseur et d'agent ÉCRITS EXACTEMENT comme dans "
+             "l'extraction crédit du CBS — sinon l'agent passe en orphelin.",
     ),
     "budget_mapping": Domaine(
         libelle="Mapping budgétaire (fichier de SUIVI budgétaire, 2 feuilles)",
@@ -130,6 +137,24 @@ DOMAINES: dict[str, Domaine] = {
         aide="Fichier mensuel COMPTE_RESULTAT_<mois>_isolé.xlsx, feuille Feuil2 : colonne A = "
              "poste, B..G = Victoire, Ozone, Goma, Lubumbashi, Masina, Gombe, H = MICROPOP. "
              "Refusé si la colonne MICROPOP ne redonne pas la somme des 6 agences.",
+    ),
+    "remboursements": Domaine(
+        libelle="Crédits remboursés (intérêts encaissés du mois)",
+        fonction=importer_remboursements, extensions=(".xlsx", ".xlsm"),
+        requis=("date_arrete",), optionnels=("feuille",), journalise=True,
+        aide="Fichier CBS « Crédits remboursés » (9 colonnes, n° de dossier en E). Chaque "
+             "remboursement est rattaché à son agent / superviseur / agence par le n° de "
+             "dossier : encours du mois, sinon du mois précédent (crédit soldé dans le mois). "
+             "Importer d'abord l'encours crédit du même arrêté. Sert la productivité, pas les primes.",
+    ),
+    "taux_change": Domaine(
+        libelle="Taux de change USD→CDF (fichier Date | Taux)",
+        fonction=importer_taux, extensions=(".xlsx", ".xlsm"),
+        requis=(), optionnels=("remplacer",), journalise=False,
+        aide="Deux colonnes : Date et Taux (un taux par jour). Les dates nouvelles sont "
+             "ajoutées, les identiques ignorées. Une date déjà en base avec un AUTRE taux "
+             "bloque l'import (elle sert au FINA, à l'AML) : écrire « oui » dans Remplacer "
+             "pour l'écraser sciemment.",
     ),
     "budget": Domaine(
         libelle="Budget annuel (charges et produits consolidés)",
@@ -276,8 +301,12 @@ def _tracer(domaine: str, spec: Domaine, kwargs: dict, *, nom_fichier: str,
     """
     aujourdhui = dt.date.today()
     arrete = kwargs.get("date_arrete") or kwargs.get("date_effet")
-    if arrete is None:                       # budget : daté par exercice, pas par arrêté
+    if arrete is None and "exercice" in kwargs:   # budget : daté par exercice
         arrete = dt.date(int(kwargs["exercice"]), 1, 1)
+    if arrete is None:
+        # Domaine sans date (taux : période dans le résultat ; mapping sans date d'effet).
+        # Sans ce repli, le journal levait KeyError APRÈS un import réussi → 500 affiché.
+        arrete = dt.date.fromisoformat(resultat["au"]) if resultat.get("au") else aujourdhui
 
     s = get_session()
     try:

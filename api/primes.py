@@ -4,6 +4,7 @@ PopPilot API — primes des catégories hors « AC et SUP » (chantier 4).
   GET  /primes/direction?arrete=…        chefs d'agence, adjoints, direction générale
   POST /primes/support                   fonctions support (effectifs saisis par agence)
   POST /primes/recouvrement  (multipart) agents + responsable recouvrement
+  POST /primes/superviseurs-epargne (multipart) Agence | Cible | Réalisation | %
 
 Les calculs sont ceux de engine/moteur_primes.py via engine/primes_categories.py. Ces
 endpoints CALCULENT, ils n'écrivent rien : le figeage d'une campagne (fait_prime +
@@ -24,9 +25,10 @@ from openpyxl.utils.exceptions import InvalidFileException
 from pydantic import BaseModel, Field
 
 from engine.primes_categories import (TAUX_DIRECTION_AGENCE, TAUX_DIRECTION_GENERALE,
-                                      bases_support, lire_fichier_recouvrement,
-                                      primes_direction_agences, primes_direction_generale,
-                                      primes_recouvrement, primes_support)
+                                      bases_support, lire_fichier_epargne_superviseurs,
+                                      lire_fichier_recouvrement, primes_direction_agences,
+                                      primes_direction_generale, primes_recouvrement,
+                                      primes_superviseurs_epargne, primes_support)
 
 from auth_supabase import ROLES_ACCES_TOTAL, exiger_role, utilisateur_courant
 from import_cbs import _ecrire_sur_disque, _nom_sain
@@ -98,3 +100,25 @@ def endpoint_primes_recouvrement(fichier: UploadFile = File(...),
             "taux": {"agent": "91-180 : 1 % ; 181-360 : 3 % ; radié : 5 %",
                      "responsable": "91-180 : 0,3 % ; 181-360 : 0,5 % ; radié : 1 % (sur le total)"},
             **primes_recouvrement(lu["lignes"], lu["total_fichier"])}
+
+
+@routeur.post("/primes/superviseurs-epargne")
+def endpoint_primes_superviseurs_epargne(fichier: UploadFile = File(...),
+                                         feuille: str | None = Form(None),
+                                         user: dict = Depends(utilisateur_courant)):
+    """Palier du moteur sur la réalisation d'épargne (par agence ET total, base à confirmer)."""
+    exiger_role(user, ROLES_ACCES_TOTAL)
+    nom = _nom_sain(fichier.filename, (".xlsx", ".xlsm"))
+    dossier = tempfile.mkdtemp(prefix="epsup_")
+    try:
+        chemin = os.path.join(dossier, nom)
+        _ecrire_sur_disque(fichier, chemin)
+        try:
+            lu = lire_fichier_epargne_superviseurs(chemin, feuille)
+        except (InvalidFileException, ValueError, StopIteration) as e:
+            raise HTTPException(400, f"Fichier épargne superviseurs illisible : {e}")
+    finally:
+        shutil.rmtree(dossier, ignore_errors=True)
+    if not lu["lignes"]:
+        raise HTTPException(400, "Aucune agence trouvée sous l'en-tête du fichier.")
+    return {"fichier": nom, **primes_superviseurs_epargne(lu["lignes"], lu["total_fichier"])}

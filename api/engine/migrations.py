@@ -17,10 +17,15 @@ from socle.schema import FaitCredit, get_session
 from engine.derivation import charger_bareme, taux_provision
 
 
+# Colonnes lues par le calcul (lignes SQL simples : ~10x plus rapide que les objets ORM
+# complets depuis Supabase — mêmes chiffres).
+_COLONNES = (FaitCredit.numero_dossier, FaitCredit.encours, FaitCredit.jours_de_retard)
+
+
 def _index_prets(session, date_arrete):
     prets = session.execute(
-        select(FaitCredit).where(FaitCredit.date_arrete == date_arrete)
-    ).scalars().all()
+        select(*_COLONNES).where(FaitCredit.date_arrete == date_arrete)
+    ).all()
     return {p.numero_dossier: p for p in prets}
 
 
@@ -31,7 +36,14 @@ def analyser_migrations(date_arrete: dt.date, date_arrete_precedent: dt.date,
     cur = _index_prets(s, date_arrete)
     prev = _index_prets(s, date_arrete_precedent)
     s.close()
+    return migrations_sur(cur, prev, bareme)
 
+
+def migrations_sur(cur: dict, prev: dict, bareme) -> dict:
+    """Le calcul lui-même, sur des prêts DÉJÀ chargés : {numero_dossier: prêt} à l'arrêté et
+    à l'arrêté précédent (tout objet exposant encours et jours_de_retard). Permet de
+    l'appliquer à une sélection (agence, agent, filtres) sans recharger ni réécrire la règle.
+    `cur` peut être un sous-ensemble ; `prev` est l'index complet du mois précédent."""
     def code(p):
         return taux_provision(bareme, p.jours_de_retard or 0)[1]
 

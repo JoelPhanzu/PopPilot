@@ -408,3 +408,26 @@ streamlit run bench/app.py          # tableau de bord visuel
 - `GET /sante` dit maintenant lequel des deux régimes est actif (`jwt_cles_publiques`,
   `jwt_secret_herite`). Tests : `python tests/test_securite_api.py` — 10 cas, dont
   ES256 accepté, ES256 contrefait rejeté, `alg: none` rejeté.
+
+## Plan d'améliorations (sept. 2026) — modules ajoutés (ADDITIF)
+- **Filtres crédit** : `GET /credit/filtre` (api/filtres_credit.py + engine/moteur_filtres). Sans
+  filtre = /par au centime. Chargements crédit limités aux colonnes utiles (Supabase : ~60-85 s → s).
+- **SAGE** : `POST /sage/traiter` (api/sage.py) — taux JOURNALIER exact de param_taux_change, jour
+  sans taux → 422 ; N° pièce/journal/section vides ; Type_Ecriture G ; CG suffixe 0 USD / 1 CDF, 8 chiffres.
+- **Imports ajoutés** (domaines de /import) : `compte_resultat_agence` (refus si MICROPOP ≠ Σ agences),
+  `taux_change` (Date | Taux ; un taux existant différent n'est écrasé qu'avec remplacer=oui),
+  `remboursements` (hiérarchie résolue par n° dossier : encours du mois, puis du mois précédent).
+- **Compte d'exploitation agences** : `GET /compte-resultat-agence` (cloisonné par colonne).
+- **Productivité** : `GET /productivite` (engine/productivite.py) — intérêts ENCAISSÉS = profitabilité,
+  PAS les primes. Roster DU MOIS obligatoire pour les vues agent/superviseur (sinon aucun profil) ;
+  hors roster → PORTEFEUILLE ORPHELIN ; agence fermée → PORTEFEUILLE GELÉ.
+- **Primes hors AC/SUP** : engine/primes_categories.py sur engine/moteur_primes.py — direction
+  (1 % / 0,5 % ; DG 1 %, DGA 0,6 %, DAF 0,3 %, resp. régional 1 %), support (5/10/PAR30), recouvrement
+  (1/3/5 % ; resp. 0,3/0,5/1 %), superviseurs épargne (base du palier À CONFIRMER). Objectifs du MOIS seulement.
+- **Eljo Smart** : `POST /eljo` (api/eljo.py) — la valeur vient toujours d'un moteur ; mois non importé
+  → indisponible (jamais un voisin). Trace eljo_conversation (par login).
+- **Archives** : api/archives.py — fichiers dans POPPILOT_ARCHIVES_DIR (hors git) ; remplacer = nouvelle
+  version, l'ancienne reste ; édition en ligne = modifications AJOUTÉES (trace), fichier intact ;
+  séries (engine/series.py) : calcul_poppilot prime sur import_historique.
+- Formats des fichiers à fournir : **docs/FORMATS_FICHIERS.md**.
+- ⚠️ Supabase (24/09/2026) : roster/objectifs importés pour MAI seulement ; taux = fins de mois.

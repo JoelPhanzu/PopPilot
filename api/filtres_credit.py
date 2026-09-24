@@ -177,3 +177,46 @@ def endpoint_credit_filtre(
         },
         "agences": agences,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TABLEAU DE BORD COMPLET (colonnes du DailyTool, doctrine flux / stock)
+# ─────────────────────────────────────────────────────────────────────────────
+# Champs réservés aux rôles à accès total, comme /provisions et /migrations : un rôle AGENCE
+# reçoit sa ligne (encours, PAR, décaissements, objectifs…) mais pas ces agrégats de risque.
+_RESERVES = ("provisions", "complement_daf", "cout_du_risque", "entree_par_nb",
+             "entree_par_montant", "migration_vers")
+
+
+@routeur.get("/credit/tableau-de-bord")
+def endpoint_tableau_de_bord(
+        arrete: str = Query(..., description="Date de VALORISATION des stocks (AAAA-MM-JJ)"),
+        debut: str | None = Query(None, description="Début de la période de FLUX (défaut : 1er du mois)"),
+        fin: str | None = Query(None, description="Fin de la période de FLUX (défaut : arrêté)"),
+        precedent: str | None = Query(None, description="Arrêté M-1 (défaut : fin du mois précédent chargée)"),
+        niveau: str = Query("agence", description="agence | superviseur | agent"),
+        agence: str | None = None, sexe: str | None = None,
+        produits: list[str] | None = Query(None), duree: str | None = None,
+        client: str | None = None, agent: str | None = None, superviseur: str | None = None,
+        user: dict = Depends(utilisateur_courant)):
+    """Stocks à l'arrêté, flux sur [début ; fin], comparaison M-1, par agence / superviseur / agent."""
+    from engine.tableau_de_bord_credit import NIVEAUX, tableau_de_bord_credit
+    if niveau not in NIVEAUX:
+        raise HTTPException(422, f"niveau inconnu : {niveau} (attendu {', '.join(NIVEAUX)})")
+    if duree and duree not in DUREES:
+        raise HTTPException(422, f"duree inconnue : {duree} (attendu : court, moyen, long)")
+    if sexe and sexe.upper() not in {"F", "H"}:
+        raise HTTPException(422, f"sexe inconnu : {sexe} (attendu : F ou H)")
+    agence = _agence_imposee(user, agence)
+    filtres = {"agence": agence, "sexe": sexe, "produits": produits, "duree": duree,
+               "client": client, "agent": agent, "superviseur": superviseur}
+    r = tableau_de_bord_credit(_d(arrete), _d(debut) if debut else None, _d(fin) if fin else None,
+                               _d(precedent) if precedent else None, niveau, filtres)
+    r["role"] = user["role"]
+    if user["role"] not in ROLES_ACCES_TOTAL:
+        r["lignes"][0]["designation"] = agence            # sa ligne, jamais « MICROPOP »
+        for l in r["lignes"]:
+            for cle in _RESERVES:
+                l[cle] = None
+        r["reserves_masques"] = list(_RESERVES)
+    return r

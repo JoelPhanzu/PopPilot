@@ -60,6 +60,22 @@ export type PrimesRecouvrement = {
   alertes: string[];
 };
 
+export type LigneEpargneSuperviseur = {
+  agence: string;
+  cible: number;
+  realisation: number;
+  taux: number | null;
+  prime: number;
+};
+
+export type PrimesSuperviseursEpargne = {
+  fichier: string;
+  agences: LigneEpargneSuperviseur[];
+  total: { cible: number; realisation: number; taux: number | null; prime: number };
+  paliers: string;
+  alertes: string[];
+};
+
 export type EtatAction<T> =
   | { etat: "vierge" }
   | { etat: "succes"; resultat: T }

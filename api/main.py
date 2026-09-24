@@ -36,6 +36,10 @@ from rapports import routeur as routeur_rapports
 from filtres_credit import routeur as routeur_filtres_credit
 from sage import routeur as routeur_sage
 from primes import routeur as routeur_primes
+from compte_resultat import routeur as routeur_compte_resultat
+from productivite import routeur as routeur_productivite
+from eljo import routeur as routeur_eljo
+from archives import routeur as routeur_archives
 
 @asynccontextmanager
 async def _cycle_de_vie(_app: FastAPI):
@@ -101,6 +105,18 @@ app.include_router(routeur_sage)
 # Primes hors « AC et SUP » : direction, fonctions support, recouvrement.
 # Calculent via engine/moteur_primes ; n'ecrivent rien.
 app.include_router(routeur_primes)
+
+# Compte d'exploitation par agence (lecture du fichier du CDG importe). Cloisonne.
+app.include_router(routeur_compte_resultat)
+
+# Productivite (interets encaisses, encours, PAR, decaissements) par agent/sup/agence.
+app.include_router(routeur_productivite)
+
+# Eljo Smart : questions en langage naturel -> moteurs valides. Trace eljo_conversation.
+app.include_router(routeur_eljo)
+
+# Archives : bibliotheque versionnee, edition en ligne tracee, series temporelles.
+app.include_router(routeur_archives)
 
 
 @app.exception_handler(ValueError)

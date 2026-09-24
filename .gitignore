@@ -10,6 +10,8 @@
 api/socle/*.db
 api/tests/fixtures/*_reel*
 data_local/
+# Fichiers deposes dans le module Archives (rapports, donnees clients) : jamais au depot.
+api/archives_depot/
 
 # Python
 __pycache__/

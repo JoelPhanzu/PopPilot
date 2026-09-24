@@ -192,13 +192,33 @@ def resultats_agences_depuis_base(date_arrete, db_path="socle/micropop.db") -> d
     return res
 
 
+def epargne_par_agence(session, date_arrete, taux: float) -> dict[str, float]:
+    """Épargne (solde_actuel) par agence, CDF converti en USD au taux daté — même règle que
+    engine.epargne.synthese_epargne (sa somme redonne son encours_total, vérifié sur août)."""
+    from sqlalchemy import func, select
+    from socle.schema import FaitEpargne
+    rows = session.execute(select(FaitEpargne.agence, FaitEpargne.devise,
+                                  func.sum(FaitEpargne.solde_actuel))
+                           .where(FaitEpargne.date_arrete == date_arrete)
+                           .group_by(FaitEpargne.agence, FaitEpargne.devise)).all()
+    out: dict[str, float] = {}
+    for ag, devise, solde in rows:
+        if ag:
+            out[ag] = out.get(ag, 0.0) + ((solde or 0.0) / taux if devise == "CDF" else (solde or 0.0))
+    return out
+
+
 def bases_support(date_arrete, effectifs: dict[str, int], db_path="socle/micropop.db") -> dict:
     """Réalisations de chaque agence pour la prime support, depuis les moteurs existants :
     PAR30 et encours (engine.par), décaissements du mois (engine.decaissement), épargne
     convertie en USD au taux daté (même règle que engine.epargne), objectif de décaissement
-    = Σ objectif_volume des agents de l'agence (param_objectif, date d'effet ≤ arrêté)."""
+    = Σ objectif_volume des agents de l'agence (param_objectif du MOIS de l'arrêté).
+
+    Objectifs du mois SEULEMENT (règle roster mensuel) : reprendre ceux d'un mois antérieur
+    ferait primer août sur les cibles de mai sans que personne le voie. Absents → critère
+    non accordé, et signalé."""
     from sqlalchemy import func, select
-    from socle.schema import FaitEpargne, ParamObjectif, get_session
+    from socle.schema import ParamObjectif, get_session
     from engine.par import calculer_par
     from engine.decaissement import decaissements
     from engine.etats_financiers import taux_change
@@ -208,25 +228,17 @@ def bases_support(date_arrete, effectifs: dict[str, int], db_path="socle/micropo
     s = get_session(db_path)
     try:
         taux = taux_change(s, date_arrete)
-        ep_rows = s.execute(select(FaitEpargne.agence, FaitEpargne.devise,
-                                   func.sum(FaitEpargne.solde_actuel))
-                            .where(FaitEpargne.date_arrete == date_arrete)
-                            .group_by(FaitEpargne.agence, FaitEpargne.devise)).all()
+        epargne = epargne_par_agence(s, date_arrete, taux)
         effet = s.execute(select(func.max(ParamObjectif.date_effet))
-                          .where(ParamObjectif.date_effet <= date_arrete)).scalar()
+                          .where(ParamObjectif.date_effet >= date_arrete.replace(day=1),
+                                 ParamObjectif.date_effet <= date_arrete)).scalar()
         obj_rows = [] if effet is None else s.execute(
             select(ParamObjectif.agence, func.sum(ParamObjectif.objectif_volume))
             .where(ParamObjectif.date_effet == effet).group_by(ParamObjectif.agence)).all()
     finally:
         s.close()
-    if not ep_rows:
+    if not epargne:
         raise ValueError(f"Aucune épargne importée pour {date_arrete} : critère épargne incalculable.")
-
-    epargne: dict[str, float] = {}
-    for ag, devise, solde in ep_rows:
-        if ag:
-            epargne[ag] = epargne.get(ag, 0.0) + ((solde or 0.0) / taux if devise == "CDF"
-                                                  else (solde or 0.0))
     objectifs = {(ag or "").strip().upper(): v for ag, v in obj_rows}
 
     agences, alertes = [], []
@@ -239,8 +251,60 @@ def bases_support(date_arrete, effectifs: dict[str, int], db_path="socle/micropo
                         "taux_decaissement": (realise / obj) if obj else None,
                         "effectif": effectifs.get(nom)})
         if not obj:
-            alertes.append(f"{nom} : objectif de décaissement inconnu → critère 5 $ non accordé")
+            alertes.append(f"{nom} : pas d'objectif de décaissement pour ce mois → critère 5 $ "
+                           "non accordé (importer le fichier OBJECTIF du mois)")
         if effectifs.get(nom) is None:
             alertes.append(f"{nom} : effectif support non saisi → total agence = 0")
     return {"agences": agences, "taux_change": taux, "date_effet_objectifs": effet,
+            "alertes": alertes}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 5. SUPERVISEURS ÉPARGNE (fichier mensuel Agence | Cible | Réalisation | %)
+# ─────────────────────────────────────────────────────────────────────────────
+def lire_fichier_epargne_superviseurs(chemin: str, feuille: str | None = None) -> dict:
+    """La ligne TOTAL du fichier sert de CONTRÔLE, comme pour le recouvrement.
+    Le % du fichier n'est pas lu : il est recalculé (réalisation / cible)."""
+    wb = openpyxl.load_workbook(chemin, read_only=True, data_only=True)
+    ws = wb[feuille] if feuille and feuille in wb.sheetnames else wb.worksheets[0]
+    cols, lignes, total = None, [], None
+    for row in ws.iter_rows(values_only=True):
+        cellules = [_norm(c) for c in row]
+        if cols is None:
+            if "agence" in cellules and any("cible" in c for c in cellules):
+                cols = {"agence": cellules.index("agence"),
+                        "cible": next(i for i, c in enumerate(cellules) if "cible" in c),
+                        "real": next(i for i, c in enumerate(cellules) if c.startswith("realis"))}
+            continue
+        if not any(row) or not row[cols["agence"]]:
+            continue
+        cible, real = _f(row[cols["cible"]]), _f(row[cols["real"]])
+        if "total" in _norm(row[cols["agence"]]):
+            total = (cible, real)
+            continue
+        lignes.append({"agence": str(row[cols["agence"]]).strip(), "cible": cible,
+                       "realisation": real, "taux": (real / cible) if cible else None})
+    if cols is None:
+        raise ValueError("En-tête introuvable : attendu Agence | Cible | Réalisation | %.")
+    return {"lignes": lignes, "total_fichier": total}
+
+
+def primes_superviseurs_epargne(lignes: list[dict], total_fichier=None) -> dict:
+    """Palier du moteur (prime_superviseur_epargne) appliqué à la RÉALISATION de chaque
+    agence, et au total. ⚠️ Base du palier (réalisation par agence ou total, montant ou %)
+    À CONFIRMER par le CDG : les deux lectures sont renvoyées, rien n'est additionné."""
+    from engine.moteur_primes import prime_superviseur_epargne
+    agences = [{**l, "prime": prime_superviseur_epargne(l["realisation"])["prime"]} for l in lignes]
+    cible = round(sum(l["cible"] for l in lignes), 2)
+    real = round(sum(l["realisation"] for l in lignes), 2)
+    alertes = []
+    if total_fichier is not None:
+        for nom, calc, lu in (("Cible", cible, total_fichier[0]), ("Réalisation", real, total_fichier[1])):
+            if abs(calc - lu) > 0.01:
+                alertes.append(f"{nom} : somme des agences {calc:,.2f} ≠ ligne TOTAL {lu:,.2f}")
+    return {"agences": agences,
+            "total": {"cible": cible, "realisation": real,
+                      "taux": (real / cible) if cible else None,
+                      "prime": prime_superviseur_epargne(real)["prime"]},
+            "paliers": "réalisation ≥ 50 000 → 60 ; ≥ 70 000 → 100 ; ≥ 100 000 → 200",
             "alertes": alertes}

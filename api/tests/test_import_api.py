@@ -407,7 +407,8 @@ def test_journal_et_catalogue_respectent_les_roles():
         # budgetaire affiche un realise a 0,00 sur toutes les lignes.
         # « compte_resultat_agence » : fichier mensuel du CDG, base des primes de direction.
         assert cles == {"credit", "balance", "epargne", "objectifs",
-                        "budget", "budget_mapping", "compte_resultat_agence"}, cles
+                        "budget", "budget_mapping", "compte_resultat_agence",
+                        "taux_change", "remboursements"}, cles
     finally:
         _nettoyer()
 

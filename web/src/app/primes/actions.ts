@@ -9,7 +9,12 @@
 import { sessionCourante } from "@/lib/session";
 import { aAccesTotal } from "@/lib/roles";
 import { appelerApiEcriture, televerserApi } from "@/lib/api";
-import type { EtatAction, PrimesRecouvrement, PrimesSupport } from "@/lib/primes";
+import type {
+  EtatAction,
+  PrimesRecouvrement,
+  PrimesSuperviseursEpargne,
+  PrimesSupport,
+} from "@/lib/primes";
 
 async function autorise(): Promise<{ jeton: string | null } | { refus: string }> {
   const { profil, jeton } = await sessionCourante();
@@ -60,5 +65,26 @@ export async function calculerRecouvrement(
   const corps = new FormData();
   corps.set("fichier", fichier, fichier.name);
   const r = await televerserApi<PrimesRecouvrement>("/primes/recouvrement", corps, a.jeton);
+  return r.ok ? { etat: "succes", resultat: r.donnees } : { etat: "echec", message: r.erreur };
+}
+
+export async function calculerEpargneSuperviseurs(
+  _precedent: EtatAction<PrimesSuperviseursEpargne>,
+  donnees: FormData,
+): Promise<EtatAction<PrimesSuperviseursEpargne>> {
+  const a = await autorise();
+  if ("refus" in a) return { etat: "echec", message: a.refus };
+
+  const fichier = donnees.get("fichier");
+  if (!(fichier instanceof File) || fichier.size === 0) {
+    return { etat: "echec", message: "Aucun fichier selectionne." };
+  }
+  const corps = new FormData();
+  corps.set("fichier", fichier, fichier.name);
+  const r = await televerserApi<PrimesSuperviseursEpargne>(
+    "/primes/superviseurs-epargne",
+    corps,
+    a.jeton,
+  );
   return r.ok ? { etat: "succes", resultat: r.donnees } : { etat: "echec", message: r.erreur };
 }

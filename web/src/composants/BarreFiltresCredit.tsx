@@ -89,8 +89,11 @@ export function BarreFiltresCredit({
   function naviguer(cible: FiltresCredit) {
     // On repart de l'URL pour garder ?arrete=… ; les axes sont reecrits en entier.
     const q = new URLSearchParams();
-    const arrete = parametres.get("arrete");
-    if (arrete) q.set("arrete", arrete);
+    // Les controles de temps et le niveau ne sont pas des filtres : on les garde.
+    for (const garde of ["arrete", "debut", "fin", "niveau"]) {
+      const valeur = parametres.get(garde);
+      if (valeur) q.set(garde, valeur);
+    }
     for (const [k, v] of Object.entries(cible)) {
       if (Array.isArray(v)) v.forEach((p) => q.append(k, p));
       else if (v) q.set(k, v);

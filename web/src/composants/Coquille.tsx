@@ -23,12 +23,16 @@ type Entree = { href: string; libelle: string; pret: boolean; ecriture?: boolean
 
 const NAVIGATION: Entree[] = [
   { href: "/credit", libelle: "Credit", pret: true },
+  { href: "/productivite", libelle: "Productivite", pret: true },
   { href: "/comptabilite", libelle: "Comptabilite & indicateurs", pret: true },
+  { href: "/compte-resultat", libelle: "Compte d'exploitation agences", pret: true },
   { href: "/epargne", libelle: "Epargne", pret: true },
   { href: "/budget", libelle: "Budget", pret: true },
   { href: "/rapports", libelle: "Rapports reglementaires", pret: true },
+  { href: "/eljo", libelle: "Eljo Smart", pret: true },
   // Primes : nominatives et institutionnelles — DIRECTION, CDG, AUDIT seulement.
   { href: "/primes", libelle: "Primes", pret: true, total: true },
+  { href: "/archives", libelle: "Archives", pret: true, total: true },
   // L'import est le point d'entree de la plateforme, mais c'est une ECRITURE :
   // il n'apparait que pour DIRECTION / CDG. Un lien propose puis refuse par
   // l'API donnerait l'impression d'une panne plutot que d'une regle.

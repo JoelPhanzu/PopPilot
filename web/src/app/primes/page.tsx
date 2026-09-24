@@ -15,6 +15,7 @@ import { FournisseurSession } from "@/composants/ContexteSession";
 import { SelecteurArrete } from "@/composants/SelecteurArrete";
 import { PrimesSupport } from "@/composants/PrimesSupport";
 import { PrimesRecouvrement } from "@/composants/PrimesRecouvrement";
+import { PrimesEpargneSuperviseurs } from "@/composants/PrimesEpargneSuperviseurs";
 import { sessionCourante } from "@/lib/session";
 import { aAccesTotal } from "@/lib/roles";
 import { appelerApi } from "@/lib/api";
@@ -142,6 +143,17 @@ export default async function PagePrimes({
               <p className="text-sm text-pop-gris">Indisponible en demonstration.</p>
             ) : (
               <PrimesSupport key={arrete} arrete={arrete} />
+            )}
+          </Section>
+
+          <Section
+            titre="Superviseurs epargne"
+            regle="Fichier mensuel Agence | Cible | Realisation | %. La ligne TOTAL sert de controle. Palier : realisation ≥ 50 000 → 60 ; ≥ 70 000 → 100 ; ≥ 100 000 → 200."
+          >
+            {profil.demo ? (
+              <p className="text-sm text-pop-gris">Indisponible en demonstration.</p>
+            ) : (
+              <PrimesEpargneSuperviseurs />
             )}
           </Section>
 
