@@ -65,11 +65,14 @@ export type LigneEpargneSuperviseur = {
   cible: number;
   realisation: number;
   taux: number | null;
-  prime: number;
 };
 
 export type PrimesSuperviseursEpargne = {
   fichier: string;
+  /** Mois de la collecte (AAAA-MM) : la prime est rangee a son mois. */
+  mois: string;
+  date_arrete: string;
+  base_palier: "total";
   agences: LigneEpargneSuperviseur[];
   total: { cible: number; realisation: number; taux: number | null; prime: number };
   paliers: string;
@@ -80,3 +83,40 @@ export type EtatAction<T> =
   | { etat: "vierge" }
   | { etat: "succes"; resultat: T }
   | { etat: "echec"; message: string };
+
+/** Une ligne de GET /primes/ac-sup (cascade CALCUL_PRIMES « AC et SUP »). */
+export type LignePrimeAcSup = {
+  agence: string;
+  nom: string;
+  fonction: "agent" | "superviseur";
+  produit: "GL" | "IL";
+  volume_realise: number;
+  volume_objectif: number | null;
+  nombre_realise: number;
+  nombre_objectif: number | null;
+  encours: number;
+  nb_credits: number;
+  epargne: number;
+  par30: number;
+  taux_volume: number;
+  taux_nombre: number;
+  taux_couverture: number;
+  eligible: boolean;
+  type_prime: string;
+  coefficient_par: number;
+  prime_credit: number;
+  prime_couverture: number;
+  prime_totale: number;
+  motif: string;
+};
+
+export type PrimesAcSup = {
+  arrete: string;
+  periode: [string, string];
+  agents: LignePrimeAcSup[];
+  superviseurs: LignePrimeAcSup[];
+  total_agents: number;
+  total_superviseurs: number;
+  alertes: string[];
+  orphelins_exclus: { agence: string; encours: number }[];
+};

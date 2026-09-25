@@ -41,9 +41,21 @@ export type LigneTdb = {
   entree_par_nb: number | null;
   entree_par_montant: number | null;
   migration_vers: Record<string, number> | null;
+  /** Projection au dernier jour du mois si rien n'est recouvre (engine/potentiel.py). */
+  potentiel_cout_du_risque: number | null;
+  potentiel_migration_nb: number;
+  potentiel_migration_montant: number;
+  potentiel_migration_vers: Record<string, number> | null;
   encours_m1: number;
   nb_clients_m1: number;
   nb_credits_m1: number;
+  /** Encaissements de la periode [debut ; fin] (fichier Credits rembourses). */
+  interets_encaisses: number;
+  capital_rembourse: number;
+  penalites_encaissees: number;
+  nb_remboursements: number;
+  /** Encaisse sur les dossiers en retard a l'arrete M-1. */
+  recouvre_sur_par: number;
 };
 
 export type JourDecaissement = {
@@ -59,12 +71,14 @@ export type TableauDeBordCredit = {
   debut: string;
   fin: string;
   precedent: string | null;
-  niveau: "agence" | "superviseur" | "agent";
+  niveau: "agence" | "superviseur" | "agent" | "client";
   roster_du_mois: boolean;
   message: string | null;
   p15_periode: [string, string];
   nb_prets_selectionnes: number;
   lignes: LigneTdb[];
+  /** Niveau client : nombre total de clients avant la limite d'affichage. */
+  nb_lignes_total: number | null;
   decaissements_jour: JourDecaissement[];
   complement_daf_exclu: boolean;
   objectifs_applicables: boolean;
@@ -75,6 +89,46 @@ export const NIVEAUX_TDB = [
   { cle: "agence", libelle: "Agences" },
   { cle: "superviseur", libelle: "Superviseurs" },
   { cle: "agent", libelle: "Agents de credit" },
+  { cle: "client", libelle: "Clients" },
+] as const;
+
+/** Descente dans le tableau : agence → superviseurs → agents → clients. */
+export const NIVEAU_SUIVANT: Record<string, { niveau: string; filtre: "agence" | "superviseur" | "agent" }> = {
+  agence: { niveau: "superviseur", filtre: "agence" },
+  superviseur: { niveau: "agent", filtre: "superviseur" },
+  agent: { niveau: "client", filtre: "agent" },
+};
+
+export type ArretesCredit = { arretes: { date: string; nb_prets: number }[] };
+
+export type ClientClasse = {
+  numero_client: string;
+  nom_client: string | null;
+  agence: string | null;
+  agent: string | null;
+  encours: number;
+  encours_retard: number;
+  max_jours_retard: number;
+  nb_credits: number;
+  valeur: number;
+  premiere_date?: string;
+};
+
+export type TopClients = {
+  arrete: string;
+  n: number;
+  critere: "encours" | "decaissement" | "fidelite";
+  periode: [string, string] | null;
+  nb_clients_selection: number;
+  meilleurs: ClientClasse[];
+  pires: ClientClasse[];
+};
+
+export const TOP_N = [10, 20, 30, 50] as const;
+export const CRITERES_TOP = [
+  { cle: "encours", libelle: "Encours" },
+  { cle: "decaissement", libelle: "Decaisse sur la periode" },
+  { cle: "fidelite", libelle: "Fidelite (nb de credits)" },
 ] as const;
 
 export function requeteTdb(

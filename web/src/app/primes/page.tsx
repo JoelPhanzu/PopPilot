@@ -16,15 +16,16 @@ import { SelecteurArrete } from "@/composants/SelecteurArrete";
 import { PrimesSupport } from "@/composants/PrimesSupport";
 import { PrimesRecouvrement } from "@/composants/PrimesRecouvrement";
 import { PrimesEpargneSuperviseurs } from "@/composants/PrimesEpargneSuperviseurs";
+import { TableauPrimesAcSup } from "@/composants/TableauPrimesAcSup";
 import { sessionCourante } from "@/lib/session";
 import { aAccesTotal } from "@/lib/roles";
 import { appelerApi } from "@/lib/api";
 import { dateArreteValide, dateLongue, montant } from "@/lib/format";
-import type { PrimesDirection } from "@/lib/primes";
+import type { PrimesAcSup, PrimesDirection } from "@/lib/primes";
 
 export const metadata: Metadata = {
   title: "Primes — PopPilot",
-  description: "Primes de direction, fonctions support et recouvrement.",
+  description: "Primes : agents de credit et superviseurs, direction, support, epargne, recouvrement.",
 };
 
 export const dynamic = "force-dynamic";
@@ -60,9 +61,12 @@ export default async function PagePrimes({
 
   const { arrete: demande } = await searchParams;
   const arrete = demande && dateArreteValide(demande) ? demande : finDuMoisPrecedent();
-  const direction = profil.demo
-    ? null
-    : await appelerApi<PrimesDirection>(`/primes/direction?arrete=${arrete}`, jeton);
+  const [direction, acSup] = profil.demo
+    ? [null, null]
+    : await Promise.all([
+        appelerApi<PrimesDirection>(`/primes/direction?arrete=${arrete}`, jeton),
+        appelerApi<PrimesAcSup>(`/primes/ac-sup?arrete=${arrete}`, jeton),
+      ]);
 
   const th = "px-3 py-2 text-right text-[12px] font-semibold uppercase tracking-wide text-pop-gris";
   const td = "chiffres px-3 py-2 text-right text-[13px]";
@@ -80,6 +84,33 @@ export default async function PagePrimes({
           </header>
 
           <SelecteurArrete key={arrete} arrete={arrete} />
+
+          <Section
+            titre="Agents de credit et superviseurs"
+            regle="Cascade CALCUL_PRIMES « AC et SUP » : eligibilite (IL : encours ≥ 100 000 et ≥ 25 credits ; GL : ≥ 50 000 et ≥ 100), type (volume ≥ 100 % → 150 ; nombre ≥ 80 % → 90 ; les deux → 240) × coefficient PAR30 (≤ 3 % ×1 ; 3-5 % ×0,7 ; 5-7 % ×0,5 ; > 7 % ×0), + 60 si l'epargne des clients du portefeuille couvre ≥ 29,5 % de l'encours. Roster, objectifs et inventaire epargne du mois requis."
+          >
+            {acSup === null ? (
+              <p className="text-sm text-pop-gris">Indisponible en demonstration.</p>
+            ) : !acSup.ok ? (
+              <p role="status" className="text-sm text-pop-alerte">{acSup.erreur}</p>
+            ) : (
+              <div className="space-y-5">
+                {acSup.donnees.alertes.length > 0 && (
+                  <ul className="list-disc pl-5 text-xs text-pop-alerte">
+                    {acSup.donnees.alertes.map((a) => (
+                      <li key={a}>{a}</li>
+                    ))}
+                  </ul>
+                )}
+                <TableauPrimesAcSup titre="Agents de credit" lignes={acSup.donnees.agents} total={acSup.donnees.total_agents} />
+                <TableauPrimesAcSup titre="Superviseurs" lignes={acSup.donnees.superviseurs} total={acSup.donnees.total_superviseurs} />
+                <p className="text-xs text-pop-gris">
+                  Portefeuilles orphelins (agents hors roster) exclus des primes. La prime ne depend pas des interets
+                  encaisses (indicateur de profitabilite, page Productivite).
+                </p>
+              </div>
+            )}
+          </Section>
 
           <Section
             titre="Direction"
@@ -148,7 +179,7 @@ export default async function PagePrimes({
 
           <Section
             titre="Superviseurs epargne"
-            regle="Fichier mensuel Agence | Cible | Realisation | %. La ligne TOTAL sert de controle. Palier : realisation ≥ 50 000 → 60 ; ≥ 70 000 → 100 ; ≥ 100 000 → 200."
+            regle="Fichier mensuel Agence | Cible | Realisation | %, range a son MOIS. La ligne TOTAL sert de controle. Palier sur la realisation TOTALE : ≥ 50 000 → 60 ; ≥ 70 000 → 100 ; ≥ 100 000 → 200 USD."
           >
             {profil.demo ? (
               <p className="text-sm text-pop-gris">Indisponible en demonstration.</p>

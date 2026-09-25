@@ -79,8 +79,13 @@ export async function calculerEpargneSuperviseurs(
   if (!(fichier instanceof File) || fichier.size === 0) {
     return { etat: "echec", message: "Aucun fichier selectionne." };
   }
+  const mois = String(donnees.get("mois") ?? "");
+  if (!/^\d{4}-\d{2}$/.test(mois)) {
+    return { etat: "echec", message: "Indiquer le mois de la collecte (AAAA-MM)." };
+  }
   const corps = new FormData();
   corps.set("fichier", fichier, fichier.name);
+  corps.set("mois", mois);
   const r = await televerserApi<PrimesSuperviseursEpargne>(
     "/primes/superviseurs-epargne",
     corps,

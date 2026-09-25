@@ -7,26 +7,37 @@ d'agent doivent être **écrits exactement comme dans l'extraction crédit du CB
 ---
 
 ## 1. Roster + objectifs (fichier OBJECTIF) — page Import, domaine « objectifs »
-Feuille nommée **OBJECTIF**. Date d'effet = **1er du mois** concerné (il ne vaut que pour ce mois).
+Feuille nommée **OBJECTIF** (sinon la première). Date d'effet = **1er du mois** concerné (il ne
+vaut que pour ce mois). Les colonnes sont repérées par leur **EN-TÊTE** : les deux formats
+ci-dessous sont acceptés, dans cet ordre ou non.
 
-| Col. | En-tête | Contenu | Exemple |
-|---|---|---|---|
-| A | AGENCE | nom CBS de l'agence | AGENCE OZONE |
-| B | SUPERVISEUR | nom CBS complet du superviseur | MBOLELA KANDA  RODDY |
-| C | AGENT DE CREDIT | nom CBS complet de l'agent | SABWA TSHIBANGU PATRICK |
-| D | #NOMBRE A DECAISSE | objectif en nombre de crédits | 10 |
-| E | VOLUME | objectif de décaissement (USD) | 70000 |
-| F | PORTEFEUILLE (volume Encours) | objectif d'encours (USD) | 250000 |
-| G | PORTEFEUILLE (Nombre de client) | objectif de clients | 100 |
-| H | PAR | objectif de PAR, en fraction | 0,05 (= 5 %) |
+Format courant (7 colonnes, exemple du CDG) :
 
-⚠️ **Noms** : dans le fichier de mai, les 9 superviseurs sont en nom court (« KANDA RODDY »)
-alors que l'encours porte le nom complet (« MBOLELA KANDA  RODDY ») → aucun ne correspond, ils
-passeraient en orphelins. Copier les noms depuis l'extraction crédit.
-⚠️ **Complétude** : tout agent actif absent du fichier passe en « portefeuille orphelin »
-(mai : 70 noms d'agents de l'encours absents du fichier, 2,14 M USD — dont le portefeuille
-gelé de Goma, agence fermée, qui n'est pas un orphelin). Inclure tous les agents actifs,
-même sans objectif (laisser D-H vides).
+| En-tête | Contenu | Exemple |
+|---|---|---|
+| AGENCE | nom CBS de l'agence | AGENCE OZONE |
+| SUPERVISEUR | nom du superviseur (nom court accepté, voir ci-dessous) | KANDA RODDY |
+| AGENT DE CREDIT | nom de l'agent | SABWA TSHIBANGU PATRICK |
+| #NOMBRE A DECAISSE | objectif en nombre de crédits | 10 |
+| VOLUME | objectif de décaissement (USD) | 70 000 |
+| PORTEFEUILLE | objectif d'encours (USD) | 250 000 |
+| PAR | objectif de PAR : « 5% », 5 ou 0,05 | 5% |
+
+Format long (8 colonnes) : PORTEFEUILLE est alors dédoublé en « PORTEFEUILLE (volume Encours) »
+et « PORTEFEUILLE (Nombre de client) ». Une cellule vide = pas d'objectif (l'agent reste au roster).
+
+**Noms** : un nom du fichier est rattaché au nom CBS s'il est identique, ou si **tous ses mots**
+figurent dans le nom CBS de la **même agence** et qu'**un seul** nom CBS convient (casse, ordre
+et espaces ignorés) : « KANDA RODDY » = « MBOLELA KANDA  RODDY ». Sinon (orthographe
+différente, deux candidats), le portefeuille reste orphelin — PopPilot ne devine pas.
+Cas relevés sur mai à corriger dans le fichier : « DAVID CIZA » (CBS : CHIZA CHIRIMULUME DAVID),
+« STAFF RICHET » (CBS : MAZU MANGIEKUN Richet).
+Superviseur MUTÉ : POMBO BIBISOMBE Arlette est à Gombe (roster correct), mais le CBS lui attribue
+encore 129 crédits d'Ozone (468 k USD). Tant qu'ils ne sont pas réaffectés dans le CBS, ils
+apparaissent en « portefeuille orphelin » d'Ozone : c'est voulu, ils n'ont plus de superviseur sur place.
+**Complétude** : tout agent actif absent du fichier passe en « portefeuille orphelin ». Inclure
+tous les agents actifs, même sans objectif. Les agences FERMÉES ou SUSPENDUES (Goma) sont un
+« portefeuille gelé », jamais orphelin, et restent dans l'encours.
 
 ## 2. Taux de change journaliers — page Import, domaine « taux_change »
 Première feuille, deux colonnes : **Date | Taux** (USD→CDF), un taux par jour.
@@ -48,6 +59,9 @@ TOTAL (contrôle : la somme des agents doit la redonner).
 
 ## 6. Épargne des superviseurs — page Primes
 **Agence | Cible | Réalisation | %**, puis une ligne TOTAL (contrôle). Le % est recalculé.
+Le **mois** de la collecte est obligatoire (champ « Mois de la collecte ») : le fichier est
+conservé à ce mois (table fait_collecte_epargne) ; ré-importer le même mois le remplace.
+Prime : palier sur la réalisation **totale** (≥ 50 000 → 60 ; ≥ 70 000 → 100 ; ≥ 100 000 → 200 USD).
 
 ## 7. Historiques d'indicateurs — page Archives, onglet Séries
 **Indicateur | Date | Agence | Valeur | Unité** (Agence vide = consolidé MICROPOP).

@@ -106,7 +106,7 @@ export function BarreFiltresCredit({
   return (
     <section
       aria-label="Filtres du portefeuille"
-      className="rounded-xl border border-pop-bord bg-pop-carte px-4 py-3 shadow-sm"
+      className="rounded-xl border border-pop-bord bg-pop-carte px-4 py-3 shadow-sm print:hidden"
     >
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {agenceFixe === null && (

@@ -527,6 +527,21 @@ class CompteResultatAgence(Base):
     __table_args__ = (UniqueConstraint("date_arrete", "poste", "agence", name="uq_cra"),)
 
 
+class FaitCollecteEpargne(Base):
+    """Collecte d'épargne du mois par agence (fichier Agence | Cible | Réalisation) — base de la
+    prime des superviseurs épargne. Daté : date_arrete = dernier jour du mois concerné."""
+    __tablename__ = "fait_collecte_epargne"
+    id = Column(Integer, primary_key=True)
+    date_arrete = Column(Date, nullable=False)
+    agence = Column(String, nullable=False)
+    cible = Column(Float)
+    realisation = Column(Float)
+    fichier = Column(String)
+    importe_par = Column(String)
+    horodatage = Column(DateTime, default=datetime.datetime.now)
+    __table_args__ = (UniqueConstraint("date_arrete", "agence", name="uq_collecte_epargne"),)
+
+
 class FaitRemboursementEncaisse(Base):
     """Remboursements encaissés, hiérarchie (agent/superviseur/agence) résolue à l'import."""
     __tablename__ = "fait_remboursement_encaisse"

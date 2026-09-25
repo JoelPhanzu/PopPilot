@@ -38,7 +38,65 @@ def test_import_et_ventilation():
     assert 67000 < nb_epargnants(ARRETE, db_path=DB) < 67300
 
 
+def test_tableau_de_bord_epargne():
+    """Sans filtre, le tableau de bord redonne la synthèse validée au centime ; Σ lignes = total
+    à chaque niveau ; les filtres partitionnent ; une date sans inventaire est refusée."""
+    from engine.tableau_de_bord_epargne import tableau_de_bord_epargne
+    syn = synthese_epargne(ARRETE, db_path=DB)
+    r = tableau_de_bord_epargne(ARRETE, db_path=DB)
+    g = r["lignes"][0]
+    assert abs(g["encours"] - syn["encours_total"]) < 0.01 and g["nb_comptes"] == syn["nb_comptes"]
+    assert g["nb_epargnants"] == nb_epargnants(ARRETE, db_path=DB)
+    assert abs(g["a_terme"] - syn["depots_a_terme"]) < 0.01
+    for niveau in ("agence", "produit", "type"):
+        x = tableau_de_bord_epargne(ARRETE, niveau=niveau, db_path=DB)
+        reste = x["lignes"][1:]
+        assert abs(sum(l["encours"] for l in reste) - g["encours"]) < 0.05, niveau
+        assert sum(l["nb_comptes"] for l in reste) == g["nb_comptes"], niveau
+        assert abs(sum(l["depots"] for l in reste) - g["depots"]) < 0.05, niveau
+    assert r["mois_de_flux"] == ["2026-07-31"] and g["depots"] > 0 and g["retraits"] > 0
+    parts = [tableau_de_bord_epargne(ARRETE, filtres={"sexe": s}, db_path=DB)["lignes"][0]
+             for s in ("H", "F", "PM")]
+    assert sum(p["nb_comptes"] for p in parts) == g["nb_comptes"]
+    assert abs(sum(p["encours"] for p in parts) - g["encours"]) < 0.05
+    c = tableau_de_bord_epargne(ARRETE, niveau="client", limite=10, db_path=DB)
+    assert len(c["lignes"]) == 11 and c["nb_lignes_total"] == g["nb_epargnants"]
+    try:
+        tableau_de_bord_epargne(dt.date(2026, 6, 30), db_path=DB)
+        raise AssertionError("un arrêté sans inventaire aurait dû être refusé")
+    except ValueError as e:
+        assert "2026-07-31" in str(e)                     # le message cite les inventaires chargés
+
+
+def test_api_epargne_cloisonnement():
+    import epargne_tdb as E
+    E.BASE = DB
+    agence = "AGENCE DE VICTOIRE"
+    r = E.endpoint_tableau_de_bord_epargne(
+        arrete=ARRETE.isoformat(), debut=None, fin=None, niveau="agence", limite=300, agence=None,
+        devise=None, type_depot=None, sexe=None, groupe=None,
+        user={"login": "v", "role": "AGENCE", "agence": agence})
+    assert r["lignes"][0]["designation"] == agence
+    assert {l["designation"] for l in r["lignes"][1:]} == {agence}
+    from fastapi import HTTPException
+    try:
+        E.endpoint_tableau_de_bord_epargne(
+            arrete=ARRETE.isoformat(), debut=None, fin=None, niveau="agence", limite=300,
+            agence="AGENCE OZONE", devise=None, type_depot=None, sexe=None, groupe=None,
+            user={"login": "v", "role": "AGENCE", "agence": agence})
+        raise AssertionError("une autre agence aurait dû être refusée")
+    except HTTPException as e:
+        assert e.status_code == 403
+    top = E.endpoint_top_epargnants(arrete=ARRETE.isoformat(), n=5, agence=None, devise=None,
+                                    type_depot=None, sexe=None, groupe=None,
+                                    user={"login": "c", "role": "CDG", "agence": None})
+    soldes = [c["solde_usd"] for c in top["clients"]]
+    assert len(soldes) == 5 and soldes == sorted(soldes, reverse=True)
+
+
 if __name__ == "__main__":
     D.sortir(D.lancer("Epargne", [
         (test_import_et_ventilation, "170k comptes, ventilation type = regle CDG"),
+        (test_tableau_de_bord_epargne, "Tableau de bord epargne = synthese ; Σ lignes ; filtres ; date absente"),
+        (test_api_epargne_cloisonnement, "API epargne : AGENCE limitee a son agence ; Top N"),
     ]))

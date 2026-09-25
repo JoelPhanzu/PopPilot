@@ -120,3 +120,21 @@ Les ratios sont **recalculés à chaque niveau** (jamais sommés).
 
 > **RH-PRIME** dépend de CR-PAR30 par agent → illustre la **source unique** : un seul PAR pour reporting,
 > réglementaire et paie.
+
+## ADDITIONS DU 25/09/2026 (décisions CDG) — tableaux de bord crédit et épargne
+
+| ID | Indicateur | Formule | Type | Source |
+|---|---|---|---|---|
+| CR-NBCLI | Nombre de clients | **noms de clients distincts** (casse / espaces ignorés) de la ligne | STOCK | règle CDG 25/09 |
+| CR-NBCRED | Nombre de crédits | dossiers (numero_dossier) de la ligne | STOCK | règle CDG 25/09 |
+| CR-POTCR | Potentiel coût du risque fin de mois | coût du risque (prêt par prêt vs M-1) recalculé sur les prêts PROJETÉS au dernier jour du mois sans aucun recouvrement : retard > 0 → retard + jours restants ; retard 0 dont une échéance tombe avant la fin du mois → jours depuis l'échéance | PROJECTION | engine/potentiel.py |
+| CR-POTMIG | Potentiel migration | crédits SAINS (retard 0) à l'arrêté qui seraient en retard au dernier jour du mois (nb, encours) | PROJECTION | engine/potentiel.py |
+| CR-ENCAIS | Intérêts / capital / pénalités encaissés | Σ fichier « Crédits remboursés » dont la date tombe dans [début ; fin] | FLUX | fait_remboursement_encaisse |
+| CR-RECPAR | Recouvré sur PAR | encaissements (capital + intérêts + pénalités) sur les dossiers en retard à l'arrêté M-1 | FLUX | idem |
+| CR-TOPN | Top N meilleurs / pires clients | meilleurs : clients sans retard, triés par encours, décaissé (période) ou nb de crédits ; pires : encours en retard du client | CLASSEMENT | engine/moteur_classement_clients.py |
+| EP-COLNET | Collecte nette | dépôts − retraits des inventaires de la période (mois entiers, chaque mois à son taux) | FLUX | engine/tableau_de_bord_epargne.py |
+| EP-COUV | Couverture du crédit | épargne (USD) ÷ encours crédit, même agence, même arrêté | RATIO | idem ; critère primes support ≥ 60 % |
+| RH-PRIME-SUPEP | Prime superviseurs épargne | palier sur la réalisation TOTALE du mois (≥ 50 k → 60 ; ≥ 70 k → 100 ; ≥ 100 k → 200 USD) | PRIME | fait_collecte_epargne |
+
+> Échéances (CR-POTMIG) : le CBS ne donne pas la prochaine échéance ; elle est déduite de la date de
+> déboursement et de la fréquence (« Mensuelle » : même quantième ; « Tous les 28 jours » : pas de 28 j).

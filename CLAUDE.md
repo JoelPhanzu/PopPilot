@@ -431,3 +431,31 @@ streamlit run bench/app.py          # tableau de bord visuel
   séries (engine/series.py) : calcul_poppilot prime sur import_historique.
 - Formats des fichiers à fournir : **docs/FORMATS_FICHIERS.md**.
 - ⚠️ Supabase (24/09/2026) : roster/objectifs importés pour MAI seulement ; taux = fins de mois.
+
+## Décisions CDG du 25/09/2026 et lot « tableaux de bord complets »
+- **Comptage** : nb clients = NOMS de clients distincts ; nb crédits = dossiers (Gombe août : 175 / 186).
+- **Goma reste SUSPENDUE** et dans l'encours : `socle/agences.agences_non_productives` (FERMÉE +
+  SUSPENDUE) → « portefeuille gelé », jamais orphelin, aux niveaux superviseur/agent.
+- **Roster en nom court** : `socle/roster.correspondances` rattache « KANDA RODDY » à « MBOLELA KANDA
+  RODDY » (mots inclus, même agence, candidat unique ; sinon orphelin — on ne devine pas). Import
+  OBJECTIF piloté par les EN-TÊTES (7 ou 8 colonnes, « 5% » accepté, cellules vides).
+- **Potentiel fin de mois** (`engine/potentiel.py`) : prêts projetés au dernier jour du mois sans
+  recouvrement (retards qui vieillissent ; sains dont une échéance tombe → en PAR), puis
+  `migrations_sur` → potentiel coût du risque + potentiel migration. Arrêté fin de mois = réalisé.
+- **Tableau de bord crédit** : niveau `client` (limité aux plus gros encours) ; descente par clic
+  agence → superviseurs → agents → clients ; encaissements de la période (intérêts 344 115,98 août
+  = fichier) + « recouvré sur PAR » ; Top 10/20/30/50 meilleurs / pires (`GET /credit/clients-top`) ;
+  `GET /credit/arretes` ; une date sans données affiche un message (plus de plantage : le sélecteur
+  levait « Invalid time value » sur un champ date vidé).
+- **Tableau de bord épargne** (`engine/tableau_de_bord_epargne.py`, `GET /epargne/tableau-de-bord`,
+  `/epargne/top`) : encours = synthèse au centime (août 6 429 239,22 ; 67 610 épargnants = AML) ;
+  flux par MOIS entiers (inventaire mensuel), couverture épargne/crédit ; cloisonné (AGENCE = son agence).
+- **Exports** : `GET /export/tableau/{credit|epargne|clients}?format=csv|xlsx` rappelle les endpoints
+  de l'écran (mêmes chiffres, même cloisonnement) ; PDF = impression navigateur (`print:hidden`).
+- **Primes AC/SUP** (`engine/primes_ac_sup.py`, `GET /primes/ac-sup`) : bases depuis le socle, règle
+  `calculer_prime_agent` ; bloquant sans roster du mois ou sans inventaire épargne du même arrêté.
+  ⏳ Validation au centime vs CALCUL_PRIMES de mai dès réception de l'inventaire dépôt de mai.
+- **Prime superviseurs épargne** : fichier rangé à son MOIS (`fait_collecte_epargne`, SQL 08),
+  palier sur la réalisation TOTALE (mai : 130 981,64 → 200 USD).
+- Eljo : « PAR » majuscule = portefeuille à risque ; « par » minuscule = préposition.
+- Hébergement cible : site + base + API sur serveurs MICROPOP → `docs/INSTALLATION_SERVEUR_LOCAL.md`.

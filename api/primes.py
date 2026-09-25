@@ -1,13 +1,16 @@
 """
-PopPilot API — primes des catégories hors « AC et SUP » (chantier 4).
+PopPilot API — primes (chantier 4) : toutes catégories, dont « AC et SUP ».
 
   GET  /primes/direction?arrete=…        chefs d'agence, adjoints, direction générale
   POST /primes/support                   fonctions support (effectifs saisis par agence)
   POST /primes/recouvrement  (multipart) agents + responsable recouvrement
-  POST /primes/superviseurs-epargne (multipart) Agence | Cible | Réalisation | %
+  POST /primes/superviseurs-epargne (multipart) Agence | Cible | Réalisation | % + MOIS
+  GET  /primes/superviseurs-epargne?mois=AAAA-MM   collecte déjà importée pour ce mois
+  GET  /primes/ac-sup?arrete=…           agents de crédit et superviseurs (roster + épargne du mois)
 
 Les calculs sont ceux de engine/moteur_primes.py via engine/primes_categories.py. Ces
-endpoints CALCULENT, ils n'écrivent rien : le figeage d'une campagne (fait_prime +
+endpoints CALCULENT ; seul le fichier de collecte d'épargne est CONSERVÉ (fait_collecte_epargne,
+rangé à son mois : un fait daté, la prime se recalcule). Le figeage d'une campagne (fait_prime +
 campagne_prime) est une action distincte, à valider par la Direction.
 
 Accès : rôles à accès total (DIRECTION, CDG, AUDIT). Les primes sont nominatives et
@@ -34,6 +37,20 @@ from auth_supabase import ROLES_ACCES_TOTAL, exiger_role, utilisateur_courant
 from import_cbs import _ecrire_sur_disque, _nom_sain
 
 routeur = APIRouter(tags=["primes"])
+
+# Base visée : celle de la plateforme (Supabase si DATABASE_URL). Les tests la remplacent.
+from socle.schema import BASE_PAR_DEFAUT  # noqa: E402
+BASE = BASE_PAR_DEFAUT
+
+
+def _mois(m: str) -> dt.date:
+    """« 2026-05 » (ou une date complète) → dernier jour du mois."""
+    import calendar
+    try:
+        d = dt.date.fromisoformat(m if len(m) > 7 else f"{m}-01")
+    except (TypeError, ValueError):
+        raise HTTPException(422, f"Mois invalide : {m} (format attendu AAAA-MM)")
+    return d.replace(day=calendar.monthrange(d.year, d.month)[1])
 
 
 def _d(s: str) -> dt.date:
@@ -104,10 +121,13 @@ def endpoint_primes_recouvrement(fichier: UploadFile = File(...),
 
 @routeur.post("/primes/superviseurs-epargne")
 def endpoint_primes_superviseurs_epargne(fichier: UploadFile = File(...),
+                                         mois: str = Form(..., description="Mois concerné AAAA-MM"),
                                          feuille: str | None = Form(None),
                                          user: dict = Depends(utilisateur_courant)):
-    """Palier du moteur sur la réalisation d'épargne (par agence ET total, base à confirmer)."""
+    """Collecte d'épargne du MOIS (Agence | Cible | Réalisation) : conservée, puis palier sur
+    la réalisation totale. Ré-importer un mois remplace sa collecte (jamais de doublon)."""
     exiger_role(user, ROLES_ACCES_TOTAL)
+    date_arrete = _mois(mois)
     nom = _nom_sain(fichier.filename, (".xlsx", ".xlsm"))
     dossier = tempfile.mkdtemp(prefix="epsup_")
     try:
@@ -121,4 +141,54 @@ def endpoint_primes_superviseurs_epargne(fichier: UploadFile = File(...),
         shutil.rmtree(dossier, ignore_errors=True)
     if not lu["lignes"]:
         raise HTTPException(400, "Aucune agence trouvée sous l'en-tête du fichier.")
-    return {"fichier": nom, **primes_superviseurs_epargne(lu["lignes"], lu["total_fichier"])}
+    from socle.schema import FaitCollecteEpargne, get_session
+    s = get_session(BASE)
+    try:
+        remplaces = s.query(FaitCollecteEpargne).filter(
+            FaitCollecteEpargne.date_arrete == date_arrete).delete()
+        for l in lu["lignes"]:
+            s.add(FaitCollecteEpargne(date_arrete=date_arrete, agence=l["agence"], cible=l["cible"],
+                                      realisation=l["realisation"], fichier=nom,
+                                      importe_par=user.get("login") or user.get("email")))
+        s.commit()
+    finally:
+        s.close()
+    return {"fichier": nom, "mois": date_arrete.strftime("%Y-%m"),
+            "date_arrete": date_arrete.isoformat(), "remplaces": remplaces,
+            **primes_superviseurs_epargne(lu["lignes"], lu["total_fichier"])}
+
+
+@routeur.get("/primes/superviseurs-epargne")
+def endpoint_collecte_epargne(mois: str | None = Query(None, description="AAAA-MM (défaut : le plus récent)"),
+                              user: dict = Depends(utilisateur_courant)):
+    """Collecte déjà importée : la prime d'un mois se relit sans re-téléverser le fichier."""
+    exiger_role(user, ROLES_ACCES_TOTAL)
+    from sqlalchemy import select
+    from socle.schema import FaitCollecteEpargne, get_session
+    s = get_session(BASE)
+    try:
+        mois_dispo = sorted({d for (d,) in s.execute(
+            select(FaitCollecteEpargne.date_arrete).distinct())}, reverse=True)
+        cible = _mois(mois) if mois else (mois_dispo[0] if mois_dispo else None)
+        lignes = s.execute(select(FaitCollecteEpargne).where(
+            FaitCollecteEpargne.date_arrete == cible)).scalars().all() if cible else []
+        donnees = [{"agence": l.agence, "cible": l.cible or 0.0, "realisation": l.realisation or 0.0,
+                    "taux": (l.realisation / l.cible) if l.cible else None} for l in lignes]
+        fichier = lignes[0].fichier if lignes else None
+    finally:
+        s.close()
+    if not donnees:
+        raise HTTPException(404, f"Aucune collecte d'épargne importée pour {mois or 'aucun mois'}.")
+    return {"fichier": fichier, "mois": cible.strftime("%Y-%m"), "date_arrete": cible.isoformat(),
+            "mois_disponibles": [d.strftime("%Y-%m") for d in mois_dispo],
+            **primes_superviseurs_epargne(donnees)}
+
+
+@routeur.get("/primes/ac-sup")
+def endpoint_primes_ac_sup(arrete: str = Query(..., description="Arrêté du mois AAAA-MM-JJ"),
+                           user: dict = Depends(utilisateur_courant)):
+    """Primes des agents de crédit et superviseurs du mois (cascade CALCUL_PRIMES « AC et SUP »).
+    Bloquant, jamais approximatif : roster + objectifs du mois et inventaire épargne requis."""
+    exiger_role(user, ROLES_ACCES_TOTAL)
+    from engine.primes_ac_sup import primes_ac_sup
+    return primes_ac_sup(_d(arrete), db_path=BASE)

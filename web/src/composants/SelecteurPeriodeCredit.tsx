@@ -7,6 +7,11 @@
  *  - PERIODE DE FLUX [debut ; fin] (decaissements, P15), independante.
  * Le cout du risque et les migrations comparent l'arrete a l'arrete M-1.
  * Tout vit dans l'URL : l'ecran est partageable et rejouable a l'identique.
+ *
+ * Robustesse : pendant la saisie, un champ date peut etre VIDE ou incomplet. Les
+ * raccourcis ne sont calcules que sur une date valide — auparavant, une date
+ * effacee faisait lever `toISOString()` (« Invalid time value ») et l'ecran entier
+ * tombait, sans moyen de ressaisir. Les arretes charges sont proposes en un clic.
  */
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -20,11 +25,14 @@ export function SelecteurPeriodeCredit({
   debut,
   fin,
   precedent,
+  disponibles = [],
 }: {
   arrete: string;
   debut: string;
   fin: string;
   precedent: string | null;
+  /** Arretes charges en base (GET /credit/arretes), le plus recent d'abord. */
+  disponibles?: string[];
 }) {
   const router = useRouter();
   const parametres = useSearchParams();
@@ -41,19 +49,13 @@ export function SelecteurPeriodeCredit({
     demarrer(() => router.push(`?${q.toString()}`));
   }
 
-  const [a, m] = v.arrete.split("-");
-  const finMois = new Date(Date.UTC(Number(a), Number(m), 0)).toISOString().slice(0, 10);
-  const raccourcis = [
-    { libelle: "Mois de l'arrete", debut: `${a}-${m}-01`, fin: v.arrete },
-    { libelle: "1re quinzaine", debut: `${a}-${m}-01`, fin: `${a}-${m}-15` },
-    { libelle: "2e quinzaine", debut: `${a}-${m}-16`, fin: finMois < v.arrete ? finMois : v.arrete },
-    { libelle: "Depuis janvier", debut: `${a}-01-01`, fin: v.arrete },
-  ];
+  const raccourcis = dateArreteValide(v.arrete) ? raccourcisPour(v.arrete) : [];
+  const moisDe = (d: string) => ({ arrete: d, debut: `${d.slice(0, 8)}01`, fin: d });
 
   return (
     <section
       aria-label="Dates du tableau de bord"
-      className="rounded-xl border border-pop-bord bg-pop-carte px-4 py-3 shadow-sm"
+      className="rounded-xl border border-pop-bord bg-pop-carte px-4 py-3 shadow-sm print:hidden"
     >
       <div className="flex flex-wrap items-end gap-4">
         <div>
@@ -104,7 +106,35 @@ export function SelecteurPeriodeCredit({
           Comparaison M-1 : {precedent ?? "aucun arrete anterieur charge"}
         </span>
       </div>
+      {disponibles.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-pop-gris">Arretes charges :</span>
+          {disponibles.map((d) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => aller(moisDe(d))}
+              className={`chiffres rounded-full px-2.5 py-0.5 ${d === arrete ? "bg-pop-bleu text-white" : "border border-pop-bord text-pop-bleu-2 hover:border-pop-cyan"}`}
+            >
+              {d.slice(8, 10)}/{d.slice(5, 7)}/{d.slice(0, 4)}
+            </button>
+          ))}
+        </div>
+      )}
       {!valide && <p className="mt-1 text-xs text-pop-danger">Dates invalides ou periode inversee.</p>}
     </section>
   );
+}
+
+/** Raccourcis de periode de flux pour un arrete VALIDE (AAAA-MM-JJ). */
+function raccourcisPour(arrete: string) {
+  const [a, m] = arrete.split("-");
+  const dernier = new Date(Date.UTC(Number(a), Number(m), 0)).getUTCDate();
+  const finMois = `${a}-${m}-${String(dernier).padStart(2, "0")}`;
+  return [
+    { libelle: "Mois de l'arrete", debut: `${a}-${m}-01`, fin: arrete },
+    { libelle: "1re quinzaine", debut: `${a}-${m}-01`, fin: `${a}-${m}-15` < arrete ? `${a}-${m}-15` : arrete },
+    { libelle: "2e quinzaine", debut: `${a}-${m}-16`, fin: finMois < arrete ? finMois : arrete },
+    { libelle: "Depuis janvier", debut: `${a}-01-01`, fin: arrete },
+  ].filter((r) => r.debut <= r.fin);
 }

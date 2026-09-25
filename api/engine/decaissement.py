@@ -75,7 +75,7 @@ def portefeuille_orphelin(date_arrete: dt.date, date_effet_roster: dt.date | Non
     date_effet_roster défaut = date_arrete."""
     if date_effet_roster is None:
         date_effet_roster = date_arrete
-    from socle.agences import agences_fermees
+    from socle.agences import agences_non_productives as agences_fermees
     s = get_session(db_path)
     fermees = agences_fermees(s)
     agents_ok = _roster(s, date_effet_roster, "agent_credit")
@@ -84,6 +84,12 @@ def portefeuille_orphelin(date_arrete: dt.date, date_effet_roster: dt.date | Non
         select(FaitCredit).where(FaitCredit.date_arrete == date_arrete)
     ).scalars().all()
     s.close()
+    # Noms du roster rapprochés des noms CBS (superviseurs en nom court) : socle/roster.py.
+    from socle.roster import correspondances, normaliser
+    agents_ok = {(normaliser(n), normaliser(a)) for n, a in agents_ok}
+    sup_ok = {(normaliser(n), normaliser(a)) for n, a in sup_ok}
+    agents_ok |= set(correspondances(agents_ok, ((p.agent_credit, p.agence) for p in prets)))
+    sup_ok |= set(correspondances(sup_ok, ((p.superviseur, p.agence) for p in prets)))
 
     orph_agent: dict[str, list] = {}
     orph_sup: dict[str, list] = {}
@@ -96,8 +102,8 @@ def portefeuille_orphelin(date_arrete: dt.date, date_effet_roster: dt.date | Non
             g[0] += 1
             g[1] += p.encours or 0.0
             continue
-        cle_agent = ((p.agent_credit or "").strip().upper(), agence_maj)
-        cle_sup = ((p.superviseur or "").strip().upper(), agence_maj)
+        cle_agent = (normaliser(p.agent_credit), normaliser(p.agence))
+        cle_sup = (normaliser(p.superviseur), normaliser(p.agence))
         if agents_ok and cle_agent not in agents_ok:
             o = orph_agent.setdefault(p.agence, [0, 0.0])
             o[0] += 1

@@ -117,12 +117,196 @@ def test_niveaux_roster_et_filtres():
     assert f["lignes"][0]["decaisse_nombre"] + h["lignes"][0]["decaisse_nombre"] == 517
 
 
+def test_niveau_client_et_comptage_des_clients():
+    from socle.schema import get_session, FaitCredit
+    r = _tdb(niveau="client", limite=100000)
+    g, reste = r["lignes"][0], r["lignes"][1:]
+    assert r["nb_lignes_total"] == len(reste) and len(reste) > 1000
+    assert abs(sum(l["encours"] for l in reste) - g["encours"]) < 0.05
+    assert abs(sum(l["cout_du_risque"] for l in reste) - g["cout_du_risque"]) < 0.05
+    # Règle CDG : clients = noms distincts ; crédits = dossiers
+    s = get_session(DB)
+    noms = {" ".join((n or "").split()).upper() for (n,) in s.query(FaitCredit.nom_client)
+            .filter(FaitCredit.date_arrete == MAI)}
+    s.close()
+    assert g["nb_clients"] == len(noms) and g["nb_credits"] == 7984
+    court = _tdb(niveau="client", limite=10)
+    assert len(court["lignes"]) == 11 and court["nb_lignes_total"] == r["nb_lignes_total"]
+    encours = [l["encours"] for l in court["lignes"][1:]]
+    assert encours == sorted(encours, reverse=True)                       # les plus gros d'abord
+
+
+def test_potentiel_fin_de_mois():
+    from types import SimpleNamespace as P
+    from engine.potentiel import projeter
+    arrete = dt.date(2026, 5, 5)
+    prets = [
+        P(numero_dossier="a", encours=100, jours_de_retard=10, date_deboursement=dt.date(2026, 1, 3),
+          frequence="Mensuelle", date_fin_echeance=None),                  # retard : vieillit de 26 j
+        P(numero_dossier="b", encours=100, jours_de_retard=0, date_deboursement=dt.date(2026, 4, 10),
+          frequence="Mensuelle", date_fin_echeance=dt.date(2026, 12, 10)),  # échéance 10/05 → 21 j
+        P(numero_dossier="c", encours=100, jours_de_retard=0, date_deboursement=dt.date(2026, 5, 1),
+          frequence="Tous les 28 jours", date_fin_echeance=None),           # échéance 29/05 → 2 j
+        P(numero_dossier="d", encours=100, jours_de_retard=0, date_deboursement=dt.date(2026, 3, 31),
+          frequence="Mensuelle", date_fin_echeance=None),                   # échéance 31/05 : pas encore en retard
+        P(numero_dossier="e", encours=100, jours_de_retard=0, date_deboursement=dt.date(2026, 4, 10),
+          frequence="Mensuelle", date_fin_echeance=dt.date(2026, 5, 4)),    # soldé avant : rien
+    ]
+    j = {k: v.jours_de_retard for k, v in projeter(prets, arrete).items()}
+    assert j == {"a": 36, "b": 21, "c": 2, "d": 0, "e": 0}, j
+    # Sur l'extraction réelle (arrêté 30/05, un jour avant la fin du mois)
+    r = _tdb(niveau="agence")
+    g, reste = r["lignes"][0], r["lignes"][1:]
+    assert g["potentiel_cout_du_risque"] >= g["cout_du_risque"] - 0.01     # le retard ne recule pas
+    assert abs(sum(l["potentiel_cout_du_risque"] for l in reste) - g["potentiel_cout_du_risque"]) < 0.05
+    assert sum(l["potentiel_migration_nb"] for l in reste) == g["potentiel_migration_nb"]
+
+
+def test_roster_nom_court_et_agence_suspendue():
+    from socle.roster import correspondances
+    roster = {("KANDA RODDY", "AGENCE OZONE"), ("JEAN", "AGENCE X"), ("JEAN PAUL", "AGENCE X")}
+    m = correspondances(roster, [("MBOLELA KANDA  RODDY", "AGENCE OZONE"), ("KANDA RODDY", "AGENCE X"),
+                                 ("JEAN PAUL MUKENDI", "AGENCE X"), ("JEAN PAUL", "AGENCE X")])
+    assert m[("MBOLELA KANDA RODDY", "AGENCE OZONE")] == ("KANDA RODDY", "AGENCE OZONE")
+    assert ("KANDA RODDY", "AGENCE X") not in m                            # autre agence : non
+    assert ("JEAN PAUL MUKENDI", "AGENCE X") not in m                      # deux candidats : on ne devine pas
+    assert m[("JEAN PAUL", "AGENCE X")] == ("JEAN PAUL", "AGENCE X")       # l'identique prime
+    # Goma SUSPENDUE (production) : portefeuille gelé, jamais orphelin ; encours inchangé
+    from socle.schema import get_session
+    from socle.agences import enregistrer_agence
+    _tdb()
+    s = get_session(DB)
+    enregistrer_agence(s, "AGENCE DE GOMA", statut="SUSPENDUE")
+    s.close()
+    try:
+        r = _tdb(niveau="superviseur")
+        goma = [l for l in r["lignes"] if l["agence"] == "AGENCE DE GOMA"]
+        assert [l["statut"] for l in goma] == ["gele"], goma
+        assert abs(goma[0]["encours"] - REF_AGENCES["AGENCE DE GOMA"][0]) < 0.01
+    finally:
+        s = get_session(DB)
+        enregistrer_agence(s, "AGENCE DE GOMA", statut="FERMEE")
+        s.close()
+
+
+def test_objectifs_format_sept_colonnes():
+    import openpyxl
+    import tempfile
+    from ingest.import_objectifs import importer_objectifs
+    from socle.schema import get_session, ParamObjectif, DimEmploye
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "OBJECTIF"
+    ws.append(["AGENCE", "SUPERVISEUR", "AGENT DE CREDIT", "#NOMBRE A DECAISSE ", "VOLUME ",
+               "PORTEFEUILLE ", "PAR"])
+    ws.append(["AGENCE OZONE", "KANDA RODDY", "SABWA TSHIBANGU PATRICK", None, None, None, "5%"])
+    ws.append(["AGENCE OZONE", "KANDA RODDY", "MWAMBA MAGLOIRE  Magloire ", 10, "20 000", None, 0.05])
+    chemin = os.path.join(tempfile.mkdtemp(), "objectif.xlsx")
+    wb.save(chemin)
+    _tdb()
+    effet = dt.date(2026, 9, 1)
+    r = importer_objectifs(chemin, effet, db_path=DB)
+    assert r == {"agents": 2, "superviseurs": 1, "objectifs": 2}, r
+    s = get_session(DB)
+    o = {x.agent: x for x in s.query(ParamObjectif).filter(ParamObjectif.date_effet == effet)}
+    assert o["SABWA TSHIBANGU PATRICK"].objectif_decaissement_nombre == 0 and \
+        abs(o["SABWA TSHIBANGU PATRICK"].objectif_par - 0.05) < 1e-12      # « 5% » → 0,05
+    assert o["MWAMBA MAGLOIRE Magloire"].objectif_volume == 20000         # espaces normalisés
+    s.query(ParamObjectif).filter(ParamObjectif.date_effet == effet).delete()
+    s.query(DimEmploye).filter(DimEmploye.date_debut == effet).delete()
+    s.commit()
+    s.close()
+
+
+def test_top_clients_et_arretes():
+    import filtres_credit as F
+    from socle.schema import get_session
+    _tdb()
+    origine = F.get_session
+    F.get_session = lambda *a, **k: get_session(DB)
+    try:
+        u = {"login": "cdg", "role": "CDG", "agence": None}
+        r = F.endpoint_clients_top(arrete=MAI.isoformat(), n=20, critere="encours", debut=None, fin=None,
+                                   agence=None, sexe=None, produits=None, duree=None, agent=None,
+                                   superviseur=None, user=u)
+        assert len(r["meilleurs"]) == 20 and len(r["pires"]) == 20
+        assert all(c["max_jours_retard"] == 0 for c in r["meilleurs"])     # meilleurs : aucun retard
+        v = [c["valeur"] for c in r["meilleurs"]]
+        assert v == sorted(v, reverse=True)
+        p = [c["encours_retard"] for c in r["pires"]]
+        assert p == sorted(p, reverse=True) and all(c["max_jours_retard"] > 0 for c in r["pires"])
+        d = F.endpoint_clients_top(arrete=MAI.isoformat(), n=50, critere="decaissement",
+                                   debut="2026-05-01", fin="2026-05-31", agence=None, sexe=None,
+                                   produits=None, duree=None, agent=None, superviseur=None, user=u)
+        assert d["periode"] == ["2026-05-01", "2026-05-31"] and len(d["meilleurs"]) == 50
+        a = {x["date"] for x in F.endpoint_arretes_credit(user=u)["arretes"]}
+        assert a == {"2026-04-30", "2026-05-30"}
+        ag = F.endpoint_clients_top(arrete=MAI.isoformat(), n=10, critere="encours", debut=None, fin=None,
+                                    agence=None, sexe=None, produits=None, duree=None, agent=None,
+                                    superviseur=None, user={"login": "v", "role": "AGENCE",
+                                                            "agence": "AGENCE DE VICTOIRE"})
+        assert {c["agence"] for c in ag["meilleurs"] + ag["pires"]} == {"AGENCE DE VICTOIRE"}
+    finally:
+        F.get_session = origine
+
+
+def test_exports_csv_xlsx():
+    """L'export reprend l'écran : mêmes lignes, mêmes chiffres, CSV lisible par Excel (« ; »,
+    virgule décimale, BOM) ; un rôle AGENCE n'exporte que sa ligne, sans champs réservés."""
+    import io as _io
+    from urllib.parse import urlencode
+    import openpyxl
+    from fastapi import HTTPException
+    from starlette.requests import Request
+    import export_tableaux as X
+    import filtres_credit as F
+    from socle.schema import get_session
+    _tdb()
+    cdg = {"login": "cdg", "role": "CDG", "agence": None}
+
+    def appel(fonction, user=cdg, **params):
+        fmt = params.pop("format", "csv")
+        req = Request({"type": "http", "query_string": urlencode(params).encode(), "headers": []})
+        return fonction(req, format=fmt, user=user)
+
+    import engine.tableau_de_bord_credit as T
+    origine, origine_t = F.get_session, T.get_session
+    F.get_session = T.get_session = lambda *a, **k: get_session(DB)
+    try:
+        r = appel(X.export_tableau_credit, arrete=MAI.isoformat(), debut="2026-05-01", fin="2026-05-31")
+        texte = r.body.decode("utf-8")
+        assert texte.startswith("\ufeff") and "Encours;" in texte           # BOM : Excel lit l'UTF-8
+        micropop = next(l for l in texte.splitlines() if l.startswith("MICROPOP;MICROPOP"))
+        assert "10814330,66" in micropop and ";517;" in micropop          # = écran, au centime
+        x = appel(X.export_tableau_credit, arrete=MAI.isoformat(), format="xlsx", niveau="agence")
+        ws = openpyxl.load_workbook(_io.BytesIO(x.body)).active
+        assert any(v and v[1] == "AGENCE DE VICTOIRE" for v in ws.iter_rows(values_only=True))
+        t = appel(X.export_tableau_clients, arrete=MAI.isoformat(), n=30)
+        assert t.body.decode("utf-8").count("meilleurs;") == 30
+        try:
+            appel(X.export_tableau_credit, arrete=MAI.isoformat(), format="pdf")
+            raise AssertionError("format pdf aurait dû être refusé (422)")
+        except HTTPException as e:
+            assert e.status_code == 422
+        agence = {"login": "v", "role": "AGENCE", "agence": "AGENCE DE VICTOIRE"}
+        a = appel(X.export_tableau_credit, user=agence, arrete=MAI.isoformat()).body.decode("utf-8")
+        assert "AGENCE OZONE" not in a and "MICROPOP;" not in a
+    finally:
+        F.get_session, T.get_session = origine, origine_t
+
+
 if __name__ == "__main__":
     code = D.lancer("Tableau de bord credit complet", [
+        (test_exports_csv_xlsx, "Exports CSV / Excel = écran ; AGENCE limitée à sa ligne"),
         (test_micropop_egale_dashboard_mai, "MICROPOP mai = Dashboard (décaissements, CR, migrations, croissance, provisions)"),
         (test_agences_egalent_dashboard_et_somme, "Agences = Dashboard ; Σ agences = MICROPOP"),
         (test_periode_de_flux_libre_et_p15, "Flux 1-15 / 16-31 mai = 134 / 383 ; P15 ; stock inchangé"),
         (test_niveaux_roster_et_filtres, "Niveaux agent/superviseur (roster), objectifs, productivité, filtres"),
+        (test_niveau_client_et_comptage_des_clients, "Niveau client : Σ = MICROPOP ; clients = noms distincts"),
+        (test_potentiel_fin_de_mois, "Potentiel CR / migration : projection fin de mois"),
+        (test_roster_nom_court_et_agence_suspendue, "Roster en nom court ; agence suspendue = gelée"),
+        (test_objectifs_format_sept_colonnes, "Fichier OBJECTIF à 7 colonnes, cellules vides, « 5% »"),
+        (test_top_clients_et_arretes, "Top N meilleurs / pires clients ; arrêtés disponibles"),
     ])
     from socle.schema import fermer_moteurs
     fermer_moteurs()

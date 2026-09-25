@@ -74,6 +74,16 @@ def agences_fermees(session) -> set[str]:
     return {r.strip().upper() for r in rows}
 
 
+def agences_non_productives(session) -> set[str]:
+    """Agences FERMÉES ou SUSPENDUES : leur encours reste dans le portefeuille (PAR, provisions,
+    BCC), mais il n'a pas d'agents à évaluer → portefeuille GELÉ, jamais « orphelin ».
+    Décision CDG (25/09/2026) : Goma reste SUSPENDUE, non productive, encours actif."""
+    rows = session.execute(
+        select(DimAgence.code_agence).where(DimAgence.statut.in_((FERMEE, SUSPENDUE)))
+    ).scalars().all()
+    return {r.strip().upper() for r in rows}
+
+
 def seed_agences(db_path="socle/micropop.db"):
     """Enregistre les agences connues. Goma fermée (occupation M23)."""
     init_db(db_path)

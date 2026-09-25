@@ -151,8 +151,15 @@ def test_invariants_et_regle_orphelin():
     _verifier_invariants("superviseur")
     agences = _verifier_invariants("agence")
     actifs = [l for l in agents["lignes"] if l["statut"] == "actif"]
-    assert actifs and all((l["designation"].strip().upper(), l["agence"].strip().upper()) in au_roster
+    # Un agent actif = au roster, à l'identique ou par son nom court (socle/roster.py :
+    # « MUBANGA DJO » au roster = « MUBANGA MUBANGA DJO » au CBS).
+    from socle.roster import correspondances, normaliser
+    rattaches = correspondances({(normaliser(n), normaliser(a)) for n, a in au_roster},
+                                [(l["designation"], l["agence"]) for l in actifs])
+    assert actifs and all((normaliser(l["designation"]), normaliser(l["agence"])) in rattaches
                           for l in actifs), "un agent hors roster a gardé sa performance"
+    assert (("MUBANGA MUBANGA DJO", "AGENCE DE LUBUMBASHI")
+            in rattaches) == any(l["designation"] == "MUBANGA MUBANGA DJO" for l in actifs)
     assert any(l["statut"] == "orphelin" for l in agents["lignes"])
     assert all("effectif_agents" in l for l in agences["lignes"])
 
@@ -175,8 +182,24 @@ def test_cloisonnement_agence():
     assert abs(r["totaux"]["interets_encaisses"] - v["interets_encaisses"]) < 0.01
 
 
+def test_encaissements_dans_le_tableau_de_bord():
+    """Le tableau de bord crédit reprend les intérêts encaissés du fichier au centime, sur la
+    période de flux, et Σ agences = MICROPOP (les non rattachés restent sur leur ligne)."""
+    _preparer()
+    from engine.tableau_de_bord_credit import tableau_de_bord_credit
+    r = tableau_de_bord_credit(JUILLET, dt.date(2026, 8, 1), dt.date(2026, 8, 31), db_path=DB)
+    g, reste = r["lignes"][0], r["lignes"][1:]
+    assert abs(g["interets_encaisses"] - 344115.98) < 0.01, g["interets_encaisses"]
+    assert abs(sum(l["interets_encaisses"] for l in reste) - g["interets_encaisses"]) < 0.01
+    assert g["nb_remboursements"] == _etat["import"]["lignes_importees"]
+    assert 0 < g["recouvre_sur_par"] < g["capital_rembourse"] + g["interets_encaisses"] + g["penalites_encaissees"]
+    vide = tableau_de_bord_credit(JUILLET, dt.date(2026, 7, 1), dt.date(2026, 7, 31), db_path=DB)
+    assert vide["lignes"][0]["nb_remboursements"] == 0                   # hors période : rien
+
+
 if __name__ == "__main__":
     code = D.lancer("Productivité (remboursements + profil)", [
+        (test_encaissements_dans_le_tableau_de_bord, "Tableau de bord : intérêts encaissés 344 115,98 sur la période"),
         (test_import_total_et_cascade, "Import : 344 115,98 ; mois + précédent + non rattachés = total"),
         (test_cascade_mois_puis_precedent, "Cascade : mois, sinon mois précédent (soldé), sinon non rattaché"),
         (test_import_idempotent, "Import rejouable (remplace, ne duplique pas)"),

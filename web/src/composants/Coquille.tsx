@@ -54,7 +54,7 @@ export function Coquille({
 }) {
   return (
     <div className="flex min-h-dvh flex-col lg:flex-row">
-      <aside className="flex shrink-0 flex-col bg-pop-bleu lg:min-h-dvh lg:w-64">
+      <aside className="flex shrink-0 flex-col bg-pop-bleu lg:min-h-dvh lg:w-64 print:hidden">
         <div className="flex items-center gap-3 px-5 py-5">
           <Logo taille={40} />
           <div className="min-w-0">
@@ -108,7 +108,7 @@ export function Coquille({
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex flex-wrap items-center justify-between gap-3 bg-pop-bleu-2 px-5 py-3 lg:px-8">
+        <header className="flex flex-wrap items-center justify-between gap-3 bg-pop-bleu-2 px-5 py-3 lg:px-8 print:hidden">
           <div className="min-w-0">
             <p className="text-sm font-medium text-white">
               {profil.login}
@@ -128,7 +128,7 @@ export function Coquille({
           <BoutonDeconnexion demo={profil.demo} />
         </header>
 
-        <main className="flex-1 px-5 py-6 lg:px-8 lg:py-8">{children}</main>
+        <main className="flex-1 px-5 py-6 lg:px-8 lg:py-8 print:p-0">{children}</main>
       </div>
     </div>
   );

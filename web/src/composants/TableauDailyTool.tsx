@@ -4,8 +4,14 @@
  * Chiffres de l'API seulement. Taux recus en FRACTIONS, affiches en %. Une valeur
  * absente (objectif non importe, champ reserve au role) s'affiche « — », jamais 0.
  * Groupes de colonnes : Objectifs & realisation (flux) · Portefeuille (stock) ·
- * Risque · Migrations (M-1 → arrete) · Rappel M-1.
+ * Risque · Migrations (M-1 → arrete) · Encaissements (periode) · Potentiel fin de
+ * mois · Rappel M-1.
+ *
+ * Declinaison DANS le tableau : un clic sur une designation descend d'un niveau
+ * (agence → ses superviseurs → leurs agents → leurs clients). Les liens sont
+ * calcules par la page (`liens`, cle « agence|designation »).
  */
+import Link from "next/link";
 import { entier, montant, pourcent } from "@/lib/format";
 import type { LigneTdb } from "@/lib/credit-tdb";
 
@@ -49,14 +55,28 @@ const COLONNES: Col[] = [
     titre: `Migration vers ${t}`,
     valeur: (l: LigneTdb) => m(l.migration_vers?.[t]),
   })),
+  { groupe: "Encaissements (periode)", titre: "Interets encaisses", valeur: (l) => m(l.interets_encaisses) },
+  { groupe: "Encaissements (periode)", titre: "Capital rembourse", valeur: (l) => m(l.capital_rembourse) },
+  { groupe: "Encaissements (periode)", titre: "Penalites", valeur: (l) => m(l.penalites_encaissees) },
+  { groupe: "Encaissements (periode)", titre: "Recouvre sur PAR", valeur: (l) => m(l.recouvre_sur_par) },
+  { groupe: "Potentiel fin de mois (si rien ne change)", titre: "Potentiel cout du risque", valeur: (l) => m(l.potentiel_cout_du_risque) },
+  { groupe: "Potentiel fin de mois (si rien ne change)", titre: "#Potentiel migration", valeur: (l) => n(l.potentiel_migration_nb) },
+  { groupe: "Potentiel fin de mois (si rien ne change)", titre: "Potentiel migration", valeur: (l) => m(l.potentiel_migration_montant) },
   { groupe: "Rappel M-1", titre: "Encours M-1", valeur: (l) => m(l.encours_m1) },
   { groupe: "Rappel M-1", titre: "#Clients M-1", valeur: (l) => n(l.nb_clients_m1) },
   { groupe: "Rappel M-1", titre: "#Credits M-1", valeur: (l) => n(l.nb_credits_m1) },
 ];
 
-const ETIQUETTE: Record<string, string> = { orphelin: "hors roster", gele: "agence fermee" };
+const ETIQUETTE: Record<string, string> = { orphelin: "hors roster", gele: "agence non productive" };
 
-export function TableauDailyTool({ lignes }: { lignes: LigneTdb[] }) {
+export function TableauDailyTool({
+  lignes,
+  liens = {},
+}: {
+  lignes: LigneTdb[];
+  /** « agence|designation » → lien vers le niveau inferieur (absent = pas de descente). */
+  liens?: Record<string, string>;
+}) {
   const groupes: { nom: string; taille: number }[] = [];
   for (const c of COLONNES) {
     const dernier = groupes[groupes.length - 1];
@@ -91,7 +111,13 @@ export function TableauDailyTool({ lignes }: { lignes: LigneTdb[] }) {
               className={`border-b border-pop-bord/60 ${i === 0 ? "bg-pop-fond font-semibold" : ""}`}
             >
               <th className={`sticky left-0 z-10 whitespace-nowrap px-3 py-1.5 text-left font-medium text-pop-encre ${i === 0 ? "bg-pop-fond" : "bg-pop-carte"}`}>
-                {l.designation}
+                {liens[`${l.agence}|${l.designation}`] ? (
+                  <Link href={liens[`${l.agence}|${l.designation}`]} className="lien-pop" title="Detailler cette ligne">
+                    {l.designation} ›
+                  </Link>
+                ) : (
+                  l.designation
+                )}
                 {l.fonction !== "AGENCE" && l.fonction !== "FILIALE" && (
                   <span className="ml-1 text-[11px] font-normal text-pop-gris">({l.agence})</span>
                 )}

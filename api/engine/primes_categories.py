@@ -290,11 +290,12 @@ def lire_fichier_epargne_superviseurs(chemin: str, feuille: str | None = None) -
 
 
 def primes_superviseurs_epargne(lignes: list[dict], total_fichier=None) -> dict:
-    """Palier du moteur (prime_superviseur_epargne) appliqué à la RÉALISATION de chaque
-    agence, et au total. ⚠️ Base du palier (réalisation par agence ou total, montant ou %)
-    À CONFIRMER par le CDG : les deux lectures sont renvoyées, rien n'est additionné."""
+    """Palier du moteur (prime_superviseur_epargne) appliqué à la RÉALISATION TOTALE du mois.
+
+    Base = TOTAL (décision 25/09/2026) : le barème (≥ 50 000 → 60 ; ≥ 70 000 → 100 ;
+    ≥ 100 000 → 200 USD) n'est atteignable qu'au total — aucune agence ne dépasse 50 000
+    (mai : 47 162,76 au plus). Les agences sont détaillées (cible, réalisation, %), sans prime."""
     from engine.moteur_primes import prime_superviseur_epargne
-    agences = [{**l, "prime": prime_superviseur_epargne(l["realisation"])["prime"]} for l in lignes]
     cible = round(sum(l["cible"] for l in lignes), 2)
     real = round(sum(l["realisation"] for l in lignes), 2)
     alertes = []
@@ -302,9 +303,10 @@ def primes_superviseurs_epargne(lignes: list[dict], total_fichier=None) -> dict:
         for nom, calc, lu in (("Cible", cible, total_fichier[0]), ("Réalisation", real, total_fichier[1])):
             if abs(calc - lu) > 0.01:
                 alertes.append(f"{nom} : somme des agences {calc:,.2f} ≠ ligne TOTAL {lu:,.2f}")
-    return {"agences": agences,
+    return {"agences": [dict(l) for l in lignes],
             "total": {"cible": cible, "realisation": real,
                       "taux": (real / cible) if cible else None,
                       "prime": prime_superviseur_epargne(real)["prime"]},
-            "paliers": "réalisation ≥ 50 000 → 60 ; ≥ 70 000 → 100 ; ≥ 100 000 → 200",
+            "base_palier": "total",
+            "paliers": "réalisation totale ≥ 50 000 → 60 ; ≥ 70 000 → 100 ; ≥ 100 000 → 200 (USD)",
             "alertes": alertes}

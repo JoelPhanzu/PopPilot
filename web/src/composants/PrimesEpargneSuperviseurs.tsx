@@ -3,9 +3,10 @@
 /**
  * PopPilot — primes des superviseurs epargne (fichier Agence | Cible | Realisation | %).
  *
- * La base du palier n'est pas encore tranchee par le CDG (realisation de chaque
- * agence, ou total) : l'ecran montre les DEUX lectures, sans les additionner,
- * et le dit. Aucun montant n'est calcule ici.
+ * Le fichier porte un MOIS (obligatoire) : la collecte est conservee a ce mois.
+ * Palier applique a la REALISATION TOTALE (≥ 50 000 → 60 ; ≥ 70 000 → 100 ;
+ * ≥ 100 000 → 200 USD) — aucune agence n'atteint seule le premier palier. Les
+ * agences sont detaillees sans prime. Aucun montant n'est calcule ici.
  */
 import { useActionState } from "react";
 import { calculerEpargneSuperviseurs } from "@/app/primes/actions";
@@ -24,6 +25,15 @@ export function PrimesEpargneSuperviseurs() {
   return (
     <div className="space-y-4">
       <form action={agir} className="flex flex-wrap items-end gap-3">
+        <label className="text-xs font-medium text-pop-gris">
+          Mois de la collecte
+          <input
+            name="mois"
+            type="month"
+            required
+            className="chiffres mt-1 block rounded-lg border border-pop-bord bg-white px-3 py-1.5 text-sm text-pop-encre"
+          />
+        </label>
         <input
           name="fichier"
           type="file"
@@ -49,9 +59,8 @@ export function PrimesEpargneSuperviseurs() {
 
       {r && (
         <>
-          <p className="rounded-lg border border-pop-alerte/30 bg-pop-alerte/5 px-3 py-2 text-xs text-pop-alerte">
-            Base du palier a confirmer par le CDG ({r.paliers}) : par agence OU sur le total.
-            Les deux lectures sont affichees ; elles ne s&apos;additionnent pas.
+          <p className="text-xs text-pop-gris">
+            Collecte de {r.mois} enregistree ({r.fichier}). Bareme : {r.paliers}.
           </p>
           {r.alertes.length > 0 && (
             <ul className="list-disc pl-5 text-xs text-pop-alerte">
@@ -61,14 +70,13 @@ export function PrimesEpargneSuperviseurs() {
             </ul>
           )}
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[36rem] border-collapse text-sm">
+            <table className="w-full min-w-[30rem] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-pop-bord">
                   <th className={`${th} text-left`}>Agence</th>
                   <th className={th}>Cible</th>
                   <th className={th}>Realisation</th>
                   <th className={th}>%</th>
-                  <th className={th}>Prime (palier agence)</th>
                 </tr>
               </thead>
               <tbody>
@@ -78,7 +86,6 @@ export function PrimesEpargneSuperviseurs() {
                     <td className={td}>{montant(l.cible)}</td>
                     <td className={td}>{montant(l.realisation)}</td>
                     <td className={td}>{taux(l.taux)}</td>
-                    <td className={`${td} font-semibold`}>{montant(l.prime)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -88,8 +95,10 @@ export function PrimesEpargneSuperviseurs() {
                   <td className={td}>{montant(r.total.cible)}</td>
                   <td className={td}>{montant(r.total.realisation)}</td>
                   <td className={td}>{taux(r.total.taux)}</td>
-                  <td className={`${td} font-semibold`}>
-                    {montant(r.total.prime)} <span className="text-pop-gris">(palier total)</span>
+                </tr>
+                <tr>
+                  <td colSpan={4} className="px-3 py-2 text-right text-sm font-semibold text-pop-encre">
+                    Prime superviseur epargne ({r.mois}) : {montant(r.total.prime)} USD
                   </td>
                 </tr>
               </tfoot>

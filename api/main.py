@@ -40,6 +40,8 @@ from compte_resultat import routeur as routeur_compte_resultat
 from productivite import routeur as routeur_productivite
 from eljo import routeur as routeur_eljo
 from archives import routeur as routeur_archives
+from epargne_tdb import routeur as routeur_epargne_tdb
+from export_tableaux import routeur as routeur_export_tableaux
 
 @asynccontextmanager
 async def _cycle_de_vie(_app: FastAPI):
@@ -117,6 +119,12 @@ app.include_router(routeur_eljo)
 
 # Archives : bibliotheque versionnee, edition en ligne tracee, series temporelles.
 app.include_router(routeur_archives)
+
+# Tableau de bord epargne : stocks, flux par mois, couverture epargne / credit, Top N.
+app.include_router(routeur_epargne_tdb)
+
+# Export des tableaux de bord tels qu'affiches (CSV / Excel) ; le PDF se fait depuis l'ecran.
+app.include_router(routeur_export_tableaux)
 
 
 @app.exception_handler(ValueError)

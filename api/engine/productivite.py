@@ -50,7 +50,7 @@ def profil_productivite(date_arrete: dt.date, niveau: str = "agence",
                         db_path="socle/micropop.db") -> dict:
     if niveau not in NIVEAUX:
         raise ValueError(f"niveau inconnu : {niveau} (attendu {', '.join(NIVEAUX)})")
-    from socle.agences import agences_fermees
+    from socle.agences import agences_non_productives as agences_fermees
 
     s = get_session(db_path)
     try:
@@ -81,6 +81,15 @@ def profil_productivite(date_arrete: dt.date, niveau: str = "agence",
                     f"Aucun roster importé pour {date_arrete:%m/%Y} : impossible de distinguer "
                     "les agents actifs des orphelins. Importer le fichier OBJECTIF du mois.")}
 
+    # Noms du roster rapprochés des noms CBS (superviseurs en nom court) : socle/roster.py.
+    from socle.roster import correspondances, normaliser
+    if roster is not None:
+        for fonction, attr in (("agent_credit", 1), ("superviseur", 2)):
+            base = {(normaliser(n), normaliser(a)) for n, a in roster[fonction]}
+            noms = [(r[attr], r[0]) for r in remb] + [
+                (p.agent_credit if attr == 1 else p.superviseur, p.agence) for p in prets]
+            roster[fonction] = base | set(correspondances(base, noms))
+
     def cle(agence, agent, superviseur) -> tuple[str, str]:
         """(agence, désignation) de la ligne où tombe ce prêt / ce remboursement."""
         ag = agence or NON_RATTACHE
@@ -92,7 +101,7 @@ def profil_productivite(date_arrete: dt.date, niveau: str = "agence",
             return (ag, GELE)
         nom = agent if niveau == "agent" else superviseur
         fonction = "agent_credit" if niveau == "agent" else "superviseur"
-        if nom and (nom.strip().upper(), ag.strip().upper()) in roster[fonction]:
+        if nom and (normaliser(nom), normaliser(ag)) in roster[fonction]:
             return (ag, nom)
         return (ag, ORPHELIN)
 

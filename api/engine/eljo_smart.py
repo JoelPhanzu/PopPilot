@@ -23,7 +23,11 @@ import re
 
 # Registre d'intentions : mot-clé → (moteur, libellé). Extensible.
 INTENTIONS = {
-    "par": {"mots": ["par", "portefeuille à risque", "portefeuille a risque", "impayé", "retard"],
+    # « par » seul n'est PAS un mot-clé : c'est la préposition (« encours par agence »).
+    # Le PAR se reconnaît à sa MAJUSCULE (« PAR », « PAR30 ») ou à une formule sans ambiguïté
+    # (« par30 », « portefeuille à risque », « retard ») — voir _parle_du_par.
+    "par": {"mots": ["portefeuille à risque", "portefeuille a risque", "impayé", "impaye",
+                     "retard"],
             "libelle": "PAR (portefeuille à risque)"},
     "encours": {"mots": ["encours", "portefeuille"], "libelle": "encours de crédit"},
     "provision": {"mots": ["provision", "dotation"], "libelle": "provisions"},
@@ -39,18 +43,33 @@ MOIS = {"janvier": 1, "février": 2, "fevrier": 2, "mars": 3, "avril": 4, "mai":
         "novembre": 11, "décembre": 12, "decembre": 12}
 
 
+def _parle_du_par(question: str) -> bool:
+    """PAR = portefeuille à risque. Règle CDG : il s'écrit TOUJOURS en majuscules.
+    « PAR », « PAR30 », « PAR 90 » (majuscules) ou « par30 » / « par 1 » (suivi d'un seuil)
+    → PAR ; « par » minuscule seul → préposition."""
+    return bool(re.search(r"\bPAR\s?(1|30|90)?\b", question)
+                or re.search(r"\bpar\s?(1|30|90)\b", question, re.IGNORECASE))
+
+
+def _contient(q: str, mot: str) -> bool:
+    """Mot-clé en DÉBUT de mot (« décaiss » couvre « décaissement ») : « mai » ne se
+    retrouve plus dans « maison », ni « perte » dans « experte »."""
+    return re.search(r"(?<!\w)" + re.escape(mot), q) is not None
+
+
 def analyser_question(question: str) -> dict:
     """Extrait l'intention, la date et le périmètre d'une question en langage naturel."""
     q = question.lower()
-    intention = None
+    intention = "par" if _parle_du_par(question) else None
     for cle, conf in INTENTIONS.items():
-        if any(m in q for m in conf["mots"]):
-            intention = cle
+        if intention:
             break
+        if any(_contient(q, m) for m in conf["mots"]):
+            intention = cle
     # date : mois + année
     date = None
     for nom, num in MOIS.items():
-        if nom in q:
+        if re.search(rf"\b{nom}\b", q):
             an = re.search(r"20\d{2}", q)
             annee = int(an.group()) if an else dt.date.today().year
             date = (annee, num)

@@ -349,13 +349,23 @@ def test_primes_superviseurs_epargne():
               ("OZONE", 23500, 21212, 0.903), ("GOMBE", 5000, 6096.44, 1.219),
               ("MASINA", 48000, 33272, 0.693), ("LUBUMBASHI", 31000, 23238.44, 0.75),
               ("TOTAL", "168 000,00", "130 981,64", None)]
+    _preparer()
+    primes.BASE = DB
     r = primes.endpoint_primes_superviseurs_epargne(
-        fichier=_upload(_xlsx(lignes), "epargne.xlsx"), feuille=None, user=_u("CDG"))
+        fichier=_upload(_xlsx(lignes), "epargne.xlsx"), mois="2026-05", feuille=None, user=_u("CDG"))
     ag = {a["agence"]: a for a in r["agences"]}
     assert round(ag["GOMBE"]["taux"] * 100, 1) == 121.9 and round(ag["VICTOIRE"]["taux"] * 100, 1) == 78.0
-    assert all(a["prime"] == 0 for a in r["agences"])                    # < 50 000 partout
+    # palier sur la réalisation TOTALE (aucune agence n'atteint 50 000) → 200 USD
+    assert r["base_palier"] == "total" and r["date_arrete"] == "2026-05-31"
     assert r["total"]["realisation"] == 130981.64 and r["total"]["prime"] == 200
     assert r["alertes"] == []
+    # conservé à son mois, relu sans fichier ; ré-import = remplacement, pas doublon
+    r2 = primes.endpoint_primes_superviseurs_epargne(
+        fichier=_upload(_xlsx(lignes), "epargne.xlsx"), mois="2026-05", feuille=None, user=_u("CDG"))
+    assert r2["remplaces"] == 5
+    g = primes.endpoint_collecte_epargne(mois="2026-05", user=_u("CDG"))
+    assert g["total"]["realisation"] == 130981.64 and g["total"]["prime"] == 200
+    assert len(g["agences"]) == 5
 
 
 def test_compte_resultat_lecture_et_cloisonnement():

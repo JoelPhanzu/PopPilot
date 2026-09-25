@@ -185,7 +185,8 @@ def endpoint_credit_filtre(
 # Champs réservés aux rôles à accès total, comme /provisions et /migrations : un rôle AGENCE
 # reçoit sa ligne (encours, PAR, décaissements, objectifs…) mais pas ces agrégats de risque.
 _RESERVES = ("provisions", "complement_daf", "cout_du_risque", "entree_par_nb",
-             "entree_par_montant", "migration_vers")
+             "entree_par_montant", "migration_vers", "potentiel_cout_du_risque",
+             "potentiel_migration_vers")
 
 
 @routeur.get("/credit/tableau-de-bord")
@@ -194,7 +195,8 @@ def endpoint_tableau_de_bord(
         debut: str | None = Query(None, description="Début de la période de FLUX (défaut : 1er du mois)"),
         fin: str | None = Query(None, description="Fin de la période de FLUX (défaut : arrêté)"),
         precedent: str | None = Query(None, description="Arrêté M-1 (défaut : fin du mois précédent chargée)"),
-        niveau: str = Query("agence", description="agence | superviseur | agent"),
+        niveau: str = Query("agence", description="agence | superviseur | agent | client"),
+        limite: int = Query(300, ge=1, le=10000, description="niveau client : nb de lignes (par encours)"),
         agence: str | None = None, sexe: str | None = None,
         produits: list[str] | None = Query(None), duree: str | None = None,
         client: str | None = None, agent: str | None = None, superviseur: str | None = None,
@@ -211,12 +213,103 @@ def endpoint_tableau_de_bord(
     filtres = {"agence": agence, "sexe": sexe, "produits": produits, "duree": duree,
                "client": client, "agent": agent, "superviseur": superviseur}
     r = tableau_de_bord_credit(_d(arrete), _d(debut) if debut else None, _d(fin) if fin else None,
-                               _d(precedent) if precedent else None, niveau, filtres)
+                               _d(precedent) if precedent else None, niveau, filtres,
+                               limite=limite)
     r["role"] = user["role"]
     if user["role"] not in ROLES_ACCES_TOTAL:
         r["lignes"][0]["designation"] = agence            # sa ligne, jamais « MICROPOP »
+        r["lignes"][0]["agence"] = agence
         for l in r["lignes"]:
             for cle in _RESERVES:
                 l[cle] = None
         r["reserves_masques"] = list(_RESERVES)
     return r
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ARRÊTÉS DISPONIBLES et TOP N CLIENTS
+# ─────────────────────────────────────────────────────────────────────────────
+@routeur.get("/credit/arretes")
+def endpoint_arretes_credit(user: dict = Depends(utilisateur_courant)):
+    """Dates d'arrêté chargées (la plus récente d'abord) : l'écran ne propose que celles-là."""
+    from sqlalchemy import func
+    s = get_session()
+    try:
+        dates = s.execute(select(FaitCredit.date_arrete, func.count())
+                          .group_by(FaitCredit.date_arrete)
+                          .order_by(FaitCredit.date_arrete.desc())).all()
+    finally:
+        s.close()
+    return {"arretes": [{"date": d.isoformat(), "nb_prets": n} for d, n in dates]}
+
+
+_COLONNES_CLIENTS = (FaitCredit.numero_dossier, FaitCredit.numero_client, FaitCredit.nom_client,
+                     FaitCredit.agence, FaitCredit.agent_credit, FaitCredit.superviseur,
+                     FaitCredit.sexe, FaitCredit.produit_credit, FaitCredit.est_groupe,
+                     FaitCredit.duree, FaitCredit.encours, FaitCredit.jours_de_retard,
+                     FaitCredit.date_deboursement, FaitCredit.montant_debourse)
+CRITERES_MEILLEURS = ("encours", "decaissement", "fidelite")
+
+
+@routeur.get("/credit/clients-top")
+def endpoint_clients_top(
+        arrete: str = Query(..., description="Date de valorisation AAAA-MM-JJ"),
+        n: int = Query(10, ge=1, le=500, description="Top N (10, 20, 30, 50…)"),
+        critere: str = Query("encours", description="meilleurs : encours | decaissement | fidelite"),
+        debut: str | None = None, fin: str | None = None,
+        agence: str | None = None, sexe: str | None = None,
+        produits: list[str] | None = Query(None), duree: str | None = None,
+        agent: str | None = None, superviseur: str | None = None,
+        user: dict = Depends(utilisateur_courant)):
+    """Top N MEILLEURS clients (aucun retard, classés par le critère) et Top N PIRES clients
+    (plus gros encours en retard). Moteur : engine.moteur_classement_clients, sur la sélection
+    filtrée et cloisonnée."""
+    from engine.moteur_classement_clients import classer_clients
+    if critere not in CRITERES_MEILLEURS:
+        raise HTTPException(422, f"critere inconnu : {critere} (attendu {', '.join(CRITERES_MEILLEURS)})")
+    if duree and duree not in DUREES:
+        raise HTTPException(422, f"duree inconnue : {duree} (attendu : court, moyen, long)")
+    if sexe and sexe.upper() not in {"F", "H"}:
+        raise HTTPException(422, f"sexe inconnu : {sexe} (attendu : F ou H)")
+    date_arrete = _d(arrete)
+    d_fin = _d(fin) if fin else date_arrete
+    d_debut = _d(debut) if debut else d_fin.replace(day=1)
+    agence = _agence_imposee(user, agence)
+    s = get_session()
+    try:
+        tous = s.execute(select(*_COLONNES_CLIENTS).where(FaitCredit.date_arrete == date_arrete)).all()
+    finally:
+        s.close()
+    if not tous:
+        raise ValueError(f"Aucun prêt pour l'arrêté {date_arrete}. Importer d'abord l'extraction.")
+    prets = filtrer_prets(tous, agence=agence, sexe=sexe, produits=produits, duree=duree,
+                          agent=agent, superviseur=superviseur)
+
+    # Fiche de chaque client (tous ses crédits de la sélection cumulés).
+    fiches: dict[str, dict] = {}
+    for p in prets:
+        f = fiches.setdefault(p.numero_client, {
+            "numero_client": p.numero_client, "nom_client": p.nom_client, "agence": p.agence,
+            "agent": p.agent_credit, "encours": 0.0, "encours_retard": 0.0,
+            "max_jours_retard": 0, "nb_credits": 0})
+        f["encours"] += p.encours or 0.0
+        f["nb_credits"] += 1
+        jr = p.jours_de_retard or 0
+        if jr > 0:
+            f["encours_retard"] += p.encours or 0.0
+            f["max_jours_retard"] = max(f["max_jours_retard"], jr)
+
+    sains = [p for p in prets if fiches[p.numero_client]["max_jours_retard"] == 0]
+    meilleurs = classer_clients(sains, critere, n, "meilleurs", d_debut, d_fin)
+    pires = classer_clients(prets, "par", n, "pires")
+    pires = [x for x in pires if x["valeur"] > 0]
+
+    def complet(x):
+        return {**fiches[x["numero_client"]], "valeur": x["valeur"],
+                **({"premiere_date": x["anciennete"].isoformat()} if x.get("anciennete") else {})}
+
+    return {"arrete": arrete, "n": n, "critere": critere,
+            "periode": [d_debut.isoformat(), d_fin.isoformat()] if critere == "decaissement" else None,
+            "nb_clients_selection": len(fiches),
+            "meilleurs": [complet(x) for x in meilleurs],
+            "pires": [complet(x) for x in pires]}

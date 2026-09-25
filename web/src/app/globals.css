@@ -53,3 +53,30 @@ body {
 .chiffres {
   font-variant-numeric: tabular-nums;
 }
+
+/* Export PDF (impression du navigateur) : page paysage, tableaux deplies, fond blanc.
+   Menus, selecteurs et boutons portent `print:hidden` : on imprime ce qu'on lit. */
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 10mm;
+  }
+  body {
+    background: #fff;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .overflow-x-auto,
+  .overflow-auto {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+  table {
+    font-size: 9px;
+  }
+  section,
+  figure,
+  article {
+    break-inside: avoid;
+  }
+}
