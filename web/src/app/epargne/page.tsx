@@ -26,7 +26,9 @@ import { BandeauSource } from "@/composants/BandeauSource";
 import { BoutonExport } from "@/composants/BoutonExport";
 import { VentilationEpargne } from "@/composants/VentilationEpargne";
 import { TableauEpargneDevises } from "@/composants/TableauEpargneDevises";
+import { AvisArrete } from "@/composants/AvisArrete";
 import { SelecteurPeriodeCredit } from "@/composants/SelecteurPeriodeCredit";
+import { arreteAffiche } from "@/lib/arretes";
 import { GraphiqueEpargne } from "@/composants/GraphiqueEpargne";
 import { TableauEpargneTdb } from "@/composants/TableauEpargneTdb";
 import { BoutonsExportTableau } from "@/composants/BoutonsExportTableau";
@@ -91,8 +93,13 @@ export default async function PageEpargne({
   const niveau = NIVEAUX_EPARGNE.some((x) => x.cle === un("niveau")) ? (un("niveau") as string) : "agence";
   const topN = TOPS.find((x) => String(x) === un("top")) ?? 10;
 
+  // Regle du calendrier : dernier inventaire enregistre a la date choisie (5 juillet → 30 juin),
+  // et c'est sa date qui s'affiche ; les flux suivent alors le mois de cet arrete.
+  const resolu = profil.demo ? null : await arreteAffiche("epargne", date("arrete"), jeton);
+  const arreteResolu = resolu?.arrete ?? date("arrete");
+  const flux = (k: string) => (resolu?.demande ? undefined : date(k));
   const q = new URLSearchParams();
-  for (const [k, v] of [["arrete", date("arrete")], ["debut", date("debut")], ["fin", date("fin")]] as const) {
+  for (const [k, v] of [["arrete", arreteResolu], ["debut", flux("debut")], ["fin", flux("fin")]] as const) {
     if (v) q.set(k, v);
   }
   q.set("niveau", niveau);
@@ -118,7 +125,7 @@ export default async function PageEpargne({
 
   // Demonstration ou API muette : l'ancienne synthese (avec son bandeau de provenance).
   if (tdb === null || (!tdb.ok && tdb.statut === null)) {
-    const arrete = date("arrete") ?? "2026-08-31";
+    const arrete = arreteResolu ?? "2026-08-31";
     const ancien = total ? await chargerEpargne(arrete, profil, jeton) : null;
     return (
       <FournisseurSession profil={profil}>
@@ -142,14 +149,14 @@ export default async function PageEpargne({
 
   // L'API a repondu sans donnees (date sans inventaire, periode inversee…) : l'ecran reste debout.
   if (!tdb.ok) {
-    const arrete = date("arrete") ?? "2026-08-31";
+    const arrete = arreteResolu ?? "2026-08-31";
     return (
       <FournisseurSession profil={profil}>
         <Coquille profil={profil} actif="/epargne">
           <div className="space-y-6">
             <h1 className="text-2xl font-semibold tracking-tight text-pop-encre">Epargne</h1>
-            <SelecteurPeriodeCredit key={`${arrete}-${date("debut")}-${date("fin")}`} arrete={arrete}
-              debut={date("debut") ?? `${arrete.slice(0, 8)}01`} fin={date("fin") ?? arrete} precedent={null} />
+            <SelecteurPeriodeCredit key={`${arrete}-${flux("debut")}-${flux("fin")}`} arrete={arrete}
+              debut={flux("debut") ?? `${arrete.slice(0, 8)}01`} fin={flux("fin") ?? arrete} precedent={null} />
             <p role="status" className="rounded-lg border border-pop-alerte/30 bg-pop-alerte/5 px-4 py-3 text-sm text-pop-alerte">
               {tdb.erreur}
             </p>
@@ -204,6 +211,7 @@ export default async function PageEpargne({
 
           <SelecteurPeriodeCredit key={`${t.arrete}-${t.debut}-${t.fin}`} arrete={t.arrete} debut={t.debut} fin={t.fin}
             precedent={t.precedent} disponibles={t.inventaires_disponibles} />
+          <AvisArrete resolu={resolu} />
 
           <section aria-label="Filtres" className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-pop-bord bg-pop-carte px-4 py-3 shadow-sm print:hidden">
             {FILTRES_EPARGNE.map((f) => (

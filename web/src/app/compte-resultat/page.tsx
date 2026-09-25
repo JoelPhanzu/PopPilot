@@ -10,8 +10,10 @@
  */
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { Coquille } from "@/composants/Coquille";
+import { AvisArrete } from "@/composants/AvisArrete";
+import { arreteAffiche } from "@/lib/arretes";
+import { SelecteurArrete } from "@/composants/SelecteurArrete";
 import { FournisseurSession } from "@/composants/ContexteSession";
 import { sessionCourante } from "@/lib/session";
 import { appelerApi } from "@/lib/api";
@@ -59,11 +61,10 @@ export default async function PageCompteResultat({
   }
 
   const { arrete: demande } = await searchParams;
-  const liste = profil.demo
-    ? null
-    : await appelerApi<{ arretes: string[] }>("/compte-resultat-agence/arretes", jeton);
-  const arretes = liste?.ok ? liste.donnees.arretes : [];
-  const arrete = demande && arretes.includes(demande) ? demande : arretes[0];
+  // Regle du calendrier : dernier compte d'exploitation enregistre a la date choisie.
+  const liste = profil.demo ? null : await arreteAffiche("compte_resultat_agence", demande, jeton);
+  const arretes = liste?.disponibles ?? [];
+  const arrete = liste?.erreur ? null : liste?.arrete ?? null;
   const cr =
     arrete && !profil.demo
       ? await appelerApi<Reponse>(`/compte-resultat-agence?arrete=${arrete}`, jeton)
@@ -87,28 +88,17 @@ export default async function PageCompteResultat({
             </p>
           </header>
 
-          {arretes.length > 1 && (
-            <nav aria-label="Mois disponibles" className="flex flex-wrap gap-2">
-              {arretes.map((a) => (
-                <Link
-                  key={a}
-                  href={`?arrete=${a}`}
-                  className={`rounded-full border px-3 py-1 text-xs ${
-                    a === arrete
-                      ? "border-pop-bleu bg-pop-bleu text-white"
-                      : "border-pop-bord bg-pop-carte text-pop-gris hover:border-pop-cyan"
-                  }`}
-                >
-                  {dateLongue(a)}
-                </Link>
-              ))}
-            </nav>
+          {arretes.length > 0 && arrete && (
+            <div className="space-y-2">
+              <SelecteurArrete key={arrete} arrete={arrete} />
+              <AvisArrete resolu={liste} />
+            </div>
           )}
 
           {profil.demo ? (
             <p className="text-sm text-pop-gris">Indisponible en demonstration.</p>
-          ) : liste && !liste.ok ? (
-            <p role="alert" className="text-sm text-pop-danger">{liste.erreur}</p>
+          ) : liste?.erreur ? (
+            <p role="alert" className="text-sm text-pop-danger">{liste?.erreur}</p>
           ) : !arrete ? (
             <p className="text-sm text-pop-gris">
               Aucun compte de resultat par agence importe. L&apos;importer depuis la page Import

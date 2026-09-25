@@ -117,8 +117,9 @@ streamlit run bench/app.py          # tableau de bord visuel
 - **Coût du risque = différentiel de provision** (provision M − provision M-1), calculé **prêt par prêt**
   (jointure numero_dossier), pas sur les totaux bruts. Sur mai : **+1 119** (dégradation nette du
   portefeuille existant). La simple différence des totaux (−5 467) inclut entrées/sorties de prêts et
-  n'est PAS le coût du risque. Le différentiel n'a de sens qu'EN COURS D'ANNÉE (combien provisionner
-  de plus ce mois-ci).
+  n'est PAS le coût du risque — c'est la **VARIATION DE PROVISION** (PV-VAR, provision constituée
+  sur le mois = provision à date − provision fin M-1), affichée À CÔTÉ du coût du risque.
+  Le différentiel n'a de sens qu'EN COURS D'ANNÉE (combien provisionner de plus ce mois-ci).
 - **À la clôture (31/12)** : on ne raisonne plus en différentiel mais en **stock total de provisions**
   constitué pour couvrir le risque. → prévoir un mode « clôture annuelle » distinct du suivi mensuel.
 - **Radiation (write-off) au 31/12** : tout crédit en retard **≥ 361 jours** est radié (sorti du bilan),
@@ -459,3 +460,15 @@ streamlit run bench/app.py          # tableau de bord visuel
   palier sur la réalisation TOTALE (mai : 130 981,64 → 200 USD).
 - Eljo : « PAR » majuscule = portefeuille à risque ; « par » minuscule = préposition.
 - Hébergement cible : site + base + API sur serveurs MICROPOP → `docs/INSTALLATION_SERVEUR_LOCAL.md`.
+
+## Règle du calendrier (CDG, 25/09/2026) — toutes les pages datées
+- L'utilisateur choisit **n'importe quelle date** dans le calendrier ; l'écran montre le **dernier
+  arrêté enregistré à cette date** (arrêté ≤ date choisie) et le calendrier **affiche cette date-là**
+  (5 juillet → chiffres ET date du 30 juin ; 30 juin → 30 juin). Date antérieure à tout import →
+  le plus ancien arrêté. Un avis (`AvisArrete`) dit quand la date affichée ≠ date saisie.
+- `GET /arretes/{domaine}` (api/arretes.py) : credit | balance | epargne | compte_resultat_agence.
+  Résolution : `web/src/lib/arretes.ts`. Crédit/productivité/primes → crédit ; compta/budget →
+  balance ; épargne → inventaire ; compte d'exploitation → son fichier. Crédit/épargne : quand la
+  date est résolue, les flux reprennent le mois de l'arrêté affiché.
+- **Configuration** (saisie DAF) garde la date saisie telle quelle : on y saisit pour un NOUVEL arrêté.
+- **Variation de provision** (PV-VAR) = provision à date − provision fin M-1, à côté du coût du risque.

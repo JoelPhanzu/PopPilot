@@ -70,6 +70,11 @@ def test_micropop_egale_dashboard_mai():
     assert abs(g["croissance"] - (-0.008904)) < 0.0001 and abs(g["encours_m1"] - 10911491.75) < 0.01
     assert abs(g["provisions"] - 938244.42) < 0.01
     assert abs(g["par30"] - 1052118.05) < 0.01
+    # Variation de provision = provision à date − provision fin M-1 (= /provisions d'avril).
+    from engine.derivation import deriver_provisions
+    avril = deriver_provisions(AVRIL, db_path=DB)["provision_capital_totale"]
+    assert abs(g["provisions_m1"] - avril) < 0.01, (g["provisions_m1"], avril)
+    assert abs(g["variation_provision"] - (938244.42 - avril)) < 0.02
 
 
 def test_agences_egalent_dashboard_et_somme():
@@ -80,7 +85,8 @@ def test_agences_egalent_dashboard_et_somme():
         for cle, v in (("encours", enc), ("par1", p1), ("par30", p30), ("par90", p90)):
             assert abs(l[cle] - v) < 0.01, (nom, cle, l[cle], v)
     for cle in ("encours", "decaisse_nombre", "decaisse_volume", "cout_du_risque",
-                "entree_par_montant", "provisions", "encours_m1", "nb_credits", "p15"):
+                "entree_par_montant", "provisions", "provisions_m1", "variation_provision",
+                "encours_m1", "nb_credits", "p15"):
         assert abs(sum(l[cle] for l in agences.values()) - g[cle]) < 0.05, cle
 
 

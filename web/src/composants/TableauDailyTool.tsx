@@ -47,6 +47,8 @@ const COLONNES: Col[] = [
   { groupe: "Risque (stock)", titre: "% PAR90", valeur: (l) => p(l.pct_par90) },
   { groupe: "Risque (stock)", titre: "Provisions", valeur: (l) => m(l.provisions) },
   { groupe: "Risque (stock)", titre: "% provisions", valeur: (l) => (l.provisions == null || !l.encours ? "—" : pourcent((l.provisions / l.encours) * 100)) },
+  { groupe: "Risque (stock)", titre: "Provisions M-1", valeur: (l) => m(l.provisions_m1) },
+  { groupe: "Risque (stock)", titre: "Variation de provision", valeur: (l) => m(l.variation_provision) },
   { groupe: "Migrations (M-1 → arrete)", titre: "Cout du risque", valeur: (l) => m(l.cout_du_risque) },
   { groupe: "Migrations (M-1 → arrete)", titre: "#Entre dans la PAR", valeur: (l) => n(l.entree_par_nb) },
   { groupe: "Migrations (M-1 → arrete)", titre: "Entre dans la PAR", valeur: (l) => m(l.entree_par_montant) },

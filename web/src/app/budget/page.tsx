@@ -32,6 +32,8 @@ import Link from "next/link";
 import { Coquille } from "@/composants/Coquille";
 import { FournisseurSession } from "@/composants/ContexteSession";
 import { CarteIndicateur } from "@/composants/CarteIndicateur";
+import { AvisArrete } from "@/composants/AvisArrete";
+import { arreteAffiche } from "@/lib/arretes";
 import { SelecteurArrete } from "@/composants/SelecteurArrete";
 import { SelecteurNiveauBudget } from "@/composants/SelecteurNiveauBudget";
 import { SelecteurVoletBudget } from "@/composants/SelecteurVoletBudget";
@@ -92,8 +94,11 @@ export default async function PageBudget({
     niveau: niveauDemande,
     volet: voletDemande,
   } = await searchParams;
+  // Regle du calendrier : le realise vient de la balance → dernier arrete de balance enregistre.
+  const resolu = profil.demo ? null : await arreteAffiche("balance", demande, jeton);
   const arrete =
-    typeof demande === "string" && dateArreteValide(demande) ? demande : ARRETE_PAR_DEFAUT;
+    resolu?.arrete ??
+    (typeof demande === "string" && dateArreteValide(demande) ? demande : ARRETE_PAR_DEFAUT);
 
   const refus = refusBudget(profil);
   if (refus !== null) {
@@ -177,6 +182,7 @@ export default async function PageBudget({
           </header>
 
           <SelecteurArrete key={tableau.arrete} arrete={tableau.arrete} />
+          <AvisArrete resolu={resolu} />
 
           <BandeauSource source={tableau.source} erreurApi={tableau.erreurApi} />
 

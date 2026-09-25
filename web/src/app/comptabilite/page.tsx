@@ -21,6 +21,8 @@ import { redirect } from "next/navigation";
 import { Coquille } from "@/composants/Coquille";
 import { FournisseurSession } from "@/composants/ContexteSession";
 import { CarteIndicateur } from "@/composants/CarteIndicateur";
+import { AvisArrete } from "@/composants/AvisArrete";
+import { arreteAffiche } from "@/lib/arretes";
 import { SelecteurArrete } from "@/composants/SelecteurArrete";
 import { BandeauSource } from "@/composants/BandeauSource";
 import { BoutonExport } from "@/composants/BoutonExport";
@@ -148,8 +150,11 @@ export default async function PageComptabilite({
   }
 
   const { arrete: demande } = await searchParams;
+  // Regle du calendrier : le dernier arrete de balance enregistre a la date choisie.
+  const resolu = profil.demo ? null : await arreteAffiche("balance", demande, jeton);
   const arrete =
-    typeof demande === "string" && dateArreteValide(demande) ? demande : ARRETE_PAR_DEFAUT;
+    resolu?.arrete ??
+    (typeof demande === "string" && dateArreteValide(demande) ? demande : ARRETE_PAR_DEFAUT);
 
   // Refus de perimetre : on le DIT, on ne va pas chercher un 403 pour le
   // relayer ensuite comme si l'API etait en panne.
@@ -215,6 +220,7 @@ export default async function PageComptabilite({
           </header>
 
           <SelecteurArrete key={tableau.arrete} arrete={tableau.arrete} />
+          <AvisArrete resolu={resolu} />
 
           {/* Le bandeau porte l'echec des ETATS : sans bilan, l'ecran n'a plus
               de substance. L'echec des seuls indicateurs a son propre message,

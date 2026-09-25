@@ -184,8 +184,8 @@ def endpoint_credit_filtre(
 # ─────────────────────────────────────────────────────────────────────────────
 # Champs réservés aux rôles à accès total, comme /provisions et /migrations : un rôle AGENCE
 # reçoit sa ligne (encours, PAR, décaissements, objectifs…) mais pas ces agrégats de risque.
-_RESERVES = ("provisions", "complement_daf", "cout_du_risque", "entree_par_nb",
-             "entree_par_montant", "migration_vers", "potentiel_cout_du_risque",
+_RESERVES = ("provisions", "complement_daf", "provisions_m1", "variation_provision",
+             "cout_du_risque", "entree_par_nb", "entree_par_montant", "migration_vers", "potentiel_cout_du_risque",
              "potentiel_migration_vers")
 
 

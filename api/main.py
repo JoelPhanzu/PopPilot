@@ -42,6 +42,7 @@ from eljo import routeur as routeur_eljo
 from archives import routeur as routeur_archives
 from epargne_tdb import routeur as routeur_epargne_tdb
 from export_tableaux import routeur as routeur_export_tableaux
+from arretes import routeur as routeur_arretes
 
 @asynccontextmanager
 async def _cycle_de_vie(_app: FastAPI):
@@ -122,6 +123,9 @@ app.include_router(routeur_archives)
 
 # Tableau de bord epargne : stocks, flux par mois, couverture epargne / credit, Top N.
 app.include_router(routeur_epargne_tdb)
+
+# Arretes enregistres par domaine : le calendrier affiche le dernier arrete <= date choisie.
+app.include_router(routeur_arretes)
 
 # Export des tableaux de bord tels qu'affiches (CSV / Excel) ; le PDF se fait depuis l'ecran.
 app.include_router(routeur_export_tableaux)

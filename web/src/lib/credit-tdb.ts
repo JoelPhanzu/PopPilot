@@ -37,6 +37,8 @@ export type LigneTdb = {
   pct_par90: number;
   provisions: number | null;
   complement_daf: number | null;
+  provisions_m1: number | null;
+  variation_provision: number | null;
   cout_du_risque: number | null;
   entree_par_nb: number | null;
   entree_par_montant: number | null;

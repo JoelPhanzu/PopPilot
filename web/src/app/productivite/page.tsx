@@ -13,6 +13,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Coquille } from "@/composants/Coquille";
 import { FournisseurSession } from "@/composants/ContexteSession";
+import { AvisArrete } from "@/composants/AvisArrete";
+import { arreteAffiche } from "@/lib/arretes";
 import { SelecteurArrete } from "@/composants/SelecteurArrete";
 import { sessionCourante } from "@/lib/session";
 import { appelerApi } from "@/lib/api";
@@ -77,7 +79,10 @@ export default async function PageProductivite({
     redirect("/login?suite=/productivite");
   }
   const sp = await searchParams;
-  const arrete = sp.arrete && dateArreteValide(sp.arrete) ? sp.arrete : finDuMoisPrecedent();
+  // Regle du calendrier : dernier arrete credit enregistre a la date choisie.
+  const resolu = profil.demo ? null : await arreteAffiche("credit", sp.arrete, jeton);
+  const arrete =
+    resolu?.arrete ?? (sp.arrete && dateArreteValide(sp.arrete) ? sp.arrete : finDuMoisPrecedent());
   const niveau = NIVEAUX.some((n) => n.cle === sp.niveau) ? (sp.niveau as string) : "agence";
   const r = profil.demo
     ? null
@@ -101,6 +106,7 @@ export default async function PageProductivite({
           </header>
 
           <SelecteurArrete key={arrete} arrete={arrete} />
+          <AvisArrete resolu={resolu} />
 
           <nav aria-label="Niveau" className="flex gap-2">
             {NIVEAUX.map((n) => (

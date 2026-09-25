@@ -8,6 +8,9 @@ Aucune règle nouvelle : ce module ASSEMBLE les moteurs validés sur un seul cha
       encours, PAR1/30/90, clients . engine.par._agrege
       provisions .................. engine.derivation (barème prêt par prêt) + complément DAF
                                     par agence (seulement si la sélection garde des agences entières)
+      variation de provision ...... provision à date − provision à l'arrêté M-1 (même règle,
+                                    barème et complément DAF en vigueur à M-1) = provision
+                                    constituée sur le mois. ≠ coût du risque (prêt par prêt).
   - STOCK M-1 (arrêté précédent) : encours, clients, crédits → croissance
   - FLUX sur [début ; fin] :
       décaissements (nb, volume, GL/IL/PME) . engine.moteur_tableau_de_bord.decaissement_periode
@@ -98,6 +101,9 @@ def tableau_de_bord_credit(date_arrete: dt.date, debut: dt.date | None = None,
         bareme = charger_bareme(s, date_arrete)
         manuelles = {pm.agence.strip().upper(): pm.montant for pm in s.execute(
             select(ProvisionManuelle).where(ProvisionManuelle.date_arrete == date_arrete)).scalars()}
+        bareme_m1 = charger_bareme(s, precedent) if precedent else None
+        manuelles_m1 = {pm.agence.strip().upper(): pm.montant for pm in s.execute(
+            select(ProvisionManuelle).where(ProvisionManuelle.date_arrete == precedent)).scalars()}             if precedent else {}
         mois = (date_arrete.replace(day=1), date_arrete)
         roster = s.execute(select(DimEmploye.nom, DimEmploye.fonction, DimEmploye.agence).where(
             DimEmploye.date_debut >= mois[0], DimEmploye.date_debut <= mois[1])).all()
@@ -166,10 +172,13 @@ def tableau_de_bord_credit(date_arrete: dt.date, debut: dt.date | None = None,
         d = decaissement_periode(prets, debut, fin)
         d15 = decaissement_periode(prets, max(debut, p15[0]), p15[1]) if debut <= p15[1] else {"nombre": 0}
         prov = sum((p.encours or 0.0) * taux_provision(bareme, p.jours_de_retard or 0)[0] for p in prets)
-        compl = 0.0
+        compl = compl_m1 = 0.0
         if not sous_agence and fonction in ("AGENCE", "FILIALE"):
-            agences = {maj(p.agence) for p in prets}
+            agences = {maj(p.agence) for p in list(prets) + list(prets_m1)}
             compl = sum(m for ag, m in manuelles.items() if ag in agences)
+            compl_m1 = sum(m for ag, m in manuelles_m1.items() if ag in agences)
+        prov_m1 = (sum((p.encours or 0.0) * taux_provision(bareme_m1, p.jours_de_retard or 0)[0]
+                       for p in prets_m1) + compl_m1) if bareme_m1 is not None else None
         mig = migrations_sur({p.numero_dossier: p for p in prets}, index_prev_tous, bareme) \
             if prev_tous else None
         pot = potentiel_fin_de_mois(prets, index_prev_tous, bareme, date_arrete)
@@ -193,6 +202,8 @@ def tableau_de_bord_credit(date_arrete: dt.date, debut: dt.date | None = None,
             "par1": a.par1, "par30": a.par30, "par90": a.par90,
             "pct_par1": a.pct_par1, "pct_par30": a.pct_par30, "pct_par90": a.pct_par90,
             "provisions": prov + compl, "complement_daf": compl,
+            "provisions_m1": prov_m1,
+            "variation_provision": (prov + compl - prov_m1) if prov_m1 is not None else None,
             "cout_du_risque": mig["cout_du_risque"] if mig else None,
             "entree_par_nb": mig["entree_par_nb"] if mig else None,
             "entree_par_montant": mig["entree_par_montant"] if mig else None,

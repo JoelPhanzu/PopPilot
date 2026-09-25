@@ -12,6 +12,8 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Coquille } from "@/composants/Coquille";
 import { FournisseurSession } from "@/composants/ContexteSession";
+import { AvisArrete } from "@/composants/AvisArrete";
+import { arreteAffiche } from "@/lib/arretes";
 import { SelecteurArrete } from "@/composants/SelecteurArrete";
 import { PrimesSupport } from "@/composants/PrimesSupport";
 import { PrimesRecouvrement } from "@/composants/PrimesRecouvrement";
@@ -60,7 +62,9 @@ export default async function PagePrimes({
   if (!aAccesTotal(profil)) redirect("/credit");
 
   const { arrete: demande } = await searchParams;
-  const arrete = demande && dateArreteValide(demande) ? demande : finDuMoisPrecedent();
+  // Regle du calendrier : les primes partent de l'encours → dernier arrete credit enregistre.
+  const resolu = profil.demo ? null : await arreteAffiche("credit", demande, jeton);
+  const arrete = resolu?.arrete ?? (demande && dateArreteValide(demande) ? demande : finDuMoisPrecedent());
   const [direction, acSup] = profil.demo
     ? [null, null]
     : await Promise.all([
@@ -84,6 +88,7 @@ export default async function PagePrimes({
           </header>
 
           <SelecteurArrete key={arrete} arrete={arrete} />
+          <AvisArrete resolu={resolu} />
 
           <Section
             titre="Agents de credit et superviseurs"

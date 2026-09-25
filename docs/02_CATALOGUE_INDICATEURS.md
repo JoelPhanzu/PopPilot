@@ -138,3 +138,13 @@ Les ratios sont **recalculés à chaque niveau** (jamais sommés).
 
 > Échéances (CR-POTMIG) : le CBS ne donne pas la prochaine échéance ; elle est déduite de la date de
 > déboursement et de la fréquence (« Mensuelle » : même quantième ; « Tous les 28 jours » : pas de 28 j).
+
+## ADDITION DU 25/09/2026 — variation de provision (demande CDG)
+
+| ID | Indicateur | Formule | Type | Source |
+|---|---|---|---|---|
+| PV-VAR | Variation de provision (provision constituée sur le mois) | provisions à date (barème + complément DAF) − provisions de la fin du mois précédent (barème et complément DAF en vigueur à M-1) | FLUX_DIFF | engine/tableau_de_bord_credit.py |
+
+> PV-VAR ≠ PV-CR : la variation porte sur les **totaux** (inclut prêts nouveaux, soldés, radiés) ;
+> le coût du risque est le différentiel **prêt par prêt** sur le portefeuille présent aux deux dates.
+> Les deux sont affichés. Juin / juillet / août 2026 : 44 208,13 / 39 553,12 / 48 010,02.

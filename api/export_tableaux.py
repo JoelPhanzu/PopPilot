@@ -38,6 +38,7 @@ _CREDIT = [
     ("Crédits", "nb_credits"), ("Encours", "encours"), ("Croissance", "croissance"),
     ("PAR1", "par1"), ("PAR30", "par30"), ("PAR90", "par90"), ("% PAR1", "pct_par1"),
     ("% PAR30", "pct_par30"), ("% PAR90", "pct_par90"), ("Provisions", "provisions"),
+    ("Provisions M-1", "provisions_m1"), ("Variation de provision", "variation_provision"),
     ("Coût du risque", "cout_du_risque"), ("#Entrés dans la PAR", "entree_par_nb"),
     ("Entrés dans la PAR", "entree_par_montant"),
     ("Migration vers 31-60", ("migration_vers", "31-60")),

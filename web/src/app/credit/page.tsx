@@ -31,7 +31,9 @@ import { TableauAgences } from "@/composants/TableauAgences";
 import { BandeauSource } from "@/composants/BandeauSource";
 import { BoutonExport } from "@/composants/BoutonExport";
 import { BarreFiltresCredit } from "@/composants/BarreFiltresCredit";
+import { AvisArrete } from "@/composants/AvisArrete";
 import { SelecteurPeriodeCredit } from "@/composants/SelecteurPeriodeCredit";
+import { resoudreArrete, type ArreteResolu } from "@/lib/arretes";
 import { GraphiqueDecaissementsJour } from "@/composants/GraphiqueDecaissementsJour";
 import { GraphiqueComparatif } from "@/composants/GraphiqueComparatif";
 import { GraphiqueMigrations } from "@/composants/GraphiqueMigrations";
@@ -91,9 +93,16 @@ export default async function PageCredit({
   // Arretes charges : la date par defaut est le PLUS RECENT, jamais une date figee.
   const liste = profil.demo ? null : await appelerApi<ArretesCredit>("/credit/arretes", jeton);
   const disponibles = liste?.ok ? liste.donnees.arretes.map((a) => a.date) : [];
-  const arrete = un("arrete") ?? disponibles[0] ?? ARRETE_PAR_DEFAUT;
-  const debut = un("debut");
-  const fin = un("fin");
+  // Regle du calendrier : le dernier arrete enregistre a la date choisie, et c'est sa date qui
+  // s'affiche (5 juillet → 30 juin). Les flux suivent alors le mois de cet arrete.
+  const saisie = un("arrete");
+  const arrete = resoudreArrete(saisie, disponibles) ?? saisie ?? ARRETE_PAR_DEFAUT;
+  const resolu: ArreteResolu = {
+    arrete, demande: saisie && saisie !== arrete && disponibles.length ? saisie : null,
+    disponibles, erreur: null,
+  };
+  const debut = resolu.demande ? undefined : un("debut");
+  const fin = resolu.demande ? undefined : un("fin");
   const niveau = NIVEAUX_TDB.some((n) => n.cle === sp.niveau) ? (sp.niveau as string) : "agence";
   const filtres = lireFiltres(sp);
   const total = aAccesTotal(profil);
@@ -206,6 +215,7 @@ export default async function PageCredit({
 
           <SelecteurPeriodeCredit key={`${t.arrete}-${t.debut}-${t.fin}`} arrete={t.arrete} debut={t.debut} fin={t.fin} precedent={t.precedent}
             disponibles={disponibles} />
+          <AvisArrete resolu={resolu} />
 
           {valeurs && (
             <BarreFiltresCredit key={JSON.stringify(filtres)} valeurs={valeurs} filtres={filtres}
@@ -246,6 +256,10 @@ export default async function PageCredit({
             <CarteIndicateur intitule="Provisions a date" valeur={g.provisions == null ? "—" : montant(g.provisions)}
               precision={g.provisions == null || !g.encours ? null : `${pourcent((g.provisions / g.encours) * 100)} de l'encours`}
               note={g.provisions == null ? "Reserve aux roles Direction, CDG et Audit." : t.complement_daf_exclu ? "Complement manuel DAF exclu : il est saisi par agence entiere." : "Bareme pret par pret + complements manuels DAF."} />
+            <CarteIndicateur intitule="Variation de provision (constituee sur le mois)"
+              valeur={g.variation_provision == null ? "—" : montant(g.variation_provision)}
+              precision={g.provisions_m1 == null ? null : `Provisions a date ${montant(g.provisions)} − fin M-1 ${montant(g.provisions_m1)}`}
+              note={g.provisions == null ? "Reserve aux roles Direction, CDG et Audit." : g.variation_provision == null ? "Aucun arrete M-1 charge : variation indisponible." : "Provision a date − provision de la fin du mois precedent (bareme et complements DAF de chaque date)."} />
             <CarteIndicateur intitule={`Cout du risque (M-1 → ${t.arrete.slice(8, 10)}/${t.arrete.slice(5, 7)})`}
               valeur={g.cout_du_risque == null ? "—" : montant(g.cout_du_risque)}
               precision={g.entree_par_nb == null ? null : `${entier(g.entree_par_nb)} entrees en PAR · ${montant(g.entree_par_montant)}`}
