@@ -9,6 +9,7 @@
  * agences sont detaillees sans prime. Aucun montant n'est calcule ici.
  */
 import { useActionState } from "react";
+import { ExportSections } from "@/composants/ExportSections";
 import { calculerEpargneSuperviseurs } from "@/app/primes/actions";
 import { montant, pourcent } from "@/lib/format";
 import type { EtatAction, PrimesSuperviseursEpargne as Reponse } from "@/lib/primes";
@@ -69,6 +70,19 @@ export function PrimesEpargneSuperviseurs() {
               ))}
             </ul>
           )}
+          <ExportSections
+            titre="Primes des superviseurs epargne"
+            sousTitre={`Collecte de ${r.mois} (${r.fichier}) ; bareme : ${r.paliers} ; taux en fraction`}
+            nom={`PopPilot_primes_superviseurs_epargne_${r.mois}`}
+            sections={[{
+              colonnes: [
+                { libelle: "Agence", cle: "agence" }, { libelle: "Cible", cle: "cible" },
+                { libelle: "Realisation", cle: "realisation" }, { libelle: "Taux", cle: "taux" },
+                { libelle: "Prime", cle: "prime" },
+              ],
+              lignes: [...r.agences, { agence: "TOTAL", ...r.total }],
+            }]}
+          />
           <div className="overflow-x-auto">
             <table className="w-full min-w-[30rem] border-collapse text-sm">
               <thead>

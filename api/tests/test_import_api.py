@@ -148,7 +148,7 @@ def _appeler(I, domaine, *, nom, contenu, user, **parametres):
     from fastapi import UploadFile
     champs = {"date_arrete": None, "date_effet": None, "feuille": None,
               "feuille_charges": None, "feuille_produits": None,
-              "devise": None, "exercice": None, "hypothese": None}
+              "devise": None, "exercice": None, "hypothese": None, "remplacer": None}
     champs.update(parametres)
     return I.endpoint_import(domaine,
                              fichier=UploadFile(file=io.BytesIO(contenu), filename=nom),
@@ -413,6 +413,64 @@ def test_journal_et_catalogue_respectent_les_roles():
         _nettoyer()
 
 
+def _taux_bcc(lignes) -> bytes:
+    """Fichier au format de l'extraction du site de la BCC : Date (texte) | USD/CDF | EUR/CDF."""
+    import openpyxl
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Cours de change"
+    ws.append(["Date", "USD/CDF", "EUR/CDF"])
+    for d, t in lignes:
+        ws.append([d, t, t * 1.17])
+    tampon = io.BytesIO()
+    wb.save(tampon)
+    return tampon.getvalue()
+
+
+def test_taux_remplacer_oui_non_par_le_web():
+    """OUI écrase, NON importe sans écraser, vide refuse — EN PASSANT PAR L'ENDPOINT.
+
+    Régression : `remplacer` n'était pas déclaré dans POST /import, FastAPI jetait le champ
+    du formulaire et « OUI » n'arrivait jamais à l'import (même refus en boucle)."""
+    from fastapi import HTTPException
+    from sqlalchemy import select
+    from socle.schema import ParamTauxChange, get_session
+    A, I, uids = _preparer()
+    cdg = _utilisateur(A, uids, "cdg")
+
+    def taux_en_base():
+        s = get_session(DB)
+        try:
+            return {r.date_effet.isoformat(): r.taux for r in s.execute(select(ParamTauxChange)
+                    .where(ParamTauxChange.date_effet >= dt.date(2030, 1, 1))).scalars()}
+        finally:
+            s.close()
+
+    r = _appeler(I, "taux_change", nom="cours-de-change.xlsx", user=cdg,
+                 contenu=_taux_bcc([("2030-01-02", 2263.57), ("2030-01-03", 2264.0)]))
+    assert r["resultat"]["ajoutes"] == 2, r
+    nouveau = _taux_bcc([("2030-01-02", 2263.5712), ("2030-01-03", 2270.25), ("2030-01-04", 2271.0)])
+    try:
+        _appeler(I, "taux_change", nom="cours-de-change.xlsx", user=cdg, contenu=nouveau)
+        raise AssertionError("conflit accepté sans choix OUI / NON")
+    except HTTPException as e:
+        assert e.status_code == 400 and "OUI" in e.detail and "NON" in e.detail, e.detail
+    r = _appeler(I, "taux_change", nom="cours-de-change.xlsx", user=cdg, contenu=nouveau,
+                 remplacer="NON")
+    assert (r["resultat"]["ajoutes"], r["resultat"]["conserves"], r["resultat"]["remplaces"]) == (1, 2, 0), r
+    assert taux_en_base() == {"2030-01-02": 2263.57, "2030-01-03": 2264.0, "2030-01-04": 2271.0}
+    r = _appeler(I, "taux_change", nom="cours-de-change.xlsx", user=cdg, contenu=nouveau,
+                 remplacer="OUI")
+    assert r["resultat"]["remplaces"] == 2 and r["parametres"]["remplacer"] == "OUI", r
+    assert taux_en_base() == {"2030-01-02": 2263.5712, "2030-01-03": 2270.25, "2030-01-04": 2271.0}
+    try:
+        _appeler(I, "taux_change", nom="cours-de-change.xlsx", user=cdg, contenu=nouveau,
+                 remplacer="peut-être")
+        raise AssertionError("réponse ambiguë acceptée")
+    except HTTPException as e:
+        assert e.status_code == 400
+
+
 def test_env_au_gabarit_refuse_l_import():
     """Un api/.env non complété doit faire REFUSER l'import (503), pas l'écrire ailleurs.
 
@@ -449,4 +507,5 @@ if __name__ == "__main__":
         (test_journal_dit_qui_a_importe,            "import_log nomme l'auteur de l'import"),
         (test_journal_et_catalogue_respectent_les_roles, "catalogue et journal cloisonnes par role"),
         (test_env_au_gabarit_refuse_l_import,       "api/.env au gabarit -> import refuse (503)"),
+        (test_taux_remplacer_oui_non_par_le_web,    "taux : OUI ecrase, NON importe sans ecraser, vide refuse (via le web)"),
     ]))

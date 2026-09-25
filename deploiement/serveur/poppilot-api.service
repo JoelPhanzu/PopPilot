@@ -1,0 +1,16 @@
+[Unit]
+Description=PopPilot API (FastAPI)
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+User=poppilot
+WorkingDirectory=/opt/poppilot/api
+# 127.0.0.1 : l'API n'est jamais exposée au réseau, seul le site (Next) l'appelle.
+# Port 8001 : le 8000 est pris par Supabase (Kong).
+ExecStart=/opt/poppilot/api/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8001 --workers 3
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

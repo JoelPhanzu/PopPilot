@@ -15,6 +15,7 @@ import { FournisseurSession } from "@/composants/ContexteSession";
 import { AvisArrete } from "@/composants/AvisArrete";
 import { arreteAffiche } from "@/lib/arretes";
 import { SelecteurArrete } from "@/composants/SelecteurArrete";
+import { ExportSections } from "@/composants/ExportSections";
 import { PrimesSupport } from "@/composants/PrimesSupport";
 import { PrimesRecouvrement } from "@/composants/PrimesRecouvrement";
 import { PrimesEpargneSuperviseurs } from "@/composants/PrimesEpargneSuperviseurs";
@@ -24,6 +25,19 @@ import { aAccesTotal } from "@/lib/roles";
 import { appelerApi } from "@/lib/api";
 import { dateArreteValide, dateLongue, montant } from "@/lib/format";
 import type { PrimesAcSup, PrimesDirection } from "@/lib/primes";
+
+const COLONNES_AC_SUP = [
+  { libelle: "Agence", cle: "agence" }, { libelle: "Nom", cle: "nom" }, { libelle: "Fonction", cle: "fonction" },
+  { libelle: "Produit", cle: "produit" }, { libelle: "Volume realise", cle: "volume_realise" },
+  { libelle: "Volume objectif", cle: "volume_objectif" }, { libelle: "Nombre realise", cle: "nombre_realise" },
+  { libelle: "Nombre objectif", cle: "nombre_objectif" }, { libelle: "Encours", cle: "encours" },
+  { libelle: "Credits", cle: "nb_credits" }, { libelle: "Epargne", cle: "epargne" }, { libelle: "PAR30", cle: "par30" },
+  { libelle: "Taux volume", cle: "taux_volume" }, { libelle: "Taux nombre", cle: "taux_nombre" },
+  { libelle: "Taux couverture", cle: "taux_couverture" }, { libelle: "Eligible", cle: "eligible" },
+  { libelle: "Type de prime", cle: "type_prime" }, { libelle: "Coefficient PAR", cle: "coefficient_par" },
+  { libelle: "Prime credit", cle: "prime_credit" }, { libelle: "Prime couverture", cle: "prime_couverture" },
+  { libelle: "Prime totale", cle: "prime_totale" }, { libelle: "Motif", cle: "motif" },
+];
 
 export const metadata: Metadata = {
   title: "Primes — PopPilot",
@@ -100,6 +114,15 @@ export default async function PagePrimes({
               <p role="status" className="text-sm text-pop-alerte">{acSup.erreur}</p>
             ) : (
               <div className="space-y-5">
+                <ExportSections
+                  titre="Primes agents de credit et superviseurs"
+                  sousTitre={`Periode du ${dateLongue(arrete)} (taux et PAR30 en fraction)`}
+                  nom={`PopPilot_primes_ac_sup_${arrete}`}
+                  sections={[
+                    { titre: "Agents de credit", colonnes: COLONNES_AC_SUP, lignes: acSup.donnees.agents },
+                    { titre: "Superviseurs", colonnes: COLONNES_AC_SUP, lignes: acSup.donnees.superviseurs },
+                  ]}
+                />
                 {acSup.donnees.alertes.length > 0 && (
                   <ul className="list-disc pl-5 text-xs text-pop-alerte">
                     {acSup.donnees.alertes.map((a) => (
@@ -127,6 +150,32 @@ export default async function PagePrimes({
               <p className="text-sm text-pop-danger">{direction.erreur}</p>
             ) : (
               <div className="grid gap-6 lg:grid-cols-3">
+                <div className="lg:col-span-3">
+                  <ExportSections
+                    titre="Primes de direction"
+                    sousTitre={`Periode du ${dateLongue(arrete)}`}
+                    nom={`PopPilot_primes_direction_${arrete}`}
+                    sections={[
+                      {
+                        titre: "Agences",
+                        colonnes: [
+                          { libelle: "Agence", cle: "agence" }, { libelle: "Resultat", cle: "resultat" },
+                          { libelle: "Chef d'agence", cle: "prime_chef_agence" },
+                          { libelle: "Adjoint", cle: "prime_adjoint" }, { libelle: "Motif", cle: "motif" },
+                        ],
+                        lignes: direction.donnees.agences,
+                      },
+                      {
+                        titre: "Direction generale",
+                        colonnes: [{ libelle: "Fonction", cle: "fonction" }, { libelle: "Prime", cle: "prime" }],
+                        lignes: [
+                          { fonction: "Resultat total", prime: direction.donnees.direction_generale.resultat_total },
+                          ...Object.entries(direction.donnees.direction_generale.primes).map(([fonction, prime]) => ({ fonction, prime })),
+                        ],
+                      },
+                    ]}
+                  />
+                </div>
                 <div className="overflow-x-auto lg:col-span-2">
                   <table className="w-full border-collapse text-sm">
                     <thead>

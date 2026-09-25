@@ -10,6 +10,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Coquille } from "@/composants/Coquille";
+import { ExportSections } from "@/composants/ExportSections";
 import { FournisseurSession } from "@/composants/ContexteSession";
 import { FormulaireSage } from "@/composants/FormulaireSage";
 import { sessionCourante } from "@/lib/session";
@@ -85,6 +86,20 @@ export default async function PageSage() {
               <p className="mt-3 text-sm text-pop-gris">Aucun traitement enregistre.</p>
             ) : (
               <div className="mt-4 overflow-x-auto">
+                <div className="mb-3">
+                  <ExportSections
+                    titre="Journal des traitements SAGE"
+                    nom="PopPilot_journal_sage"
+                    sections={[{
+                      colonnes: [
+                        { libelle: "Date", cle: "date" }, { libelle: "Periode", cle: "periode" },
+                        { libelle: "Fichier", cle: "fichier" }, { libelle: "Lignes", cle: "lignes" },
+                        { libelle: "Statut", cle: "statut" }, { libelle: "Message", cle: "message" },
+                      ],
+                      lignes: journal.donnees.traitements,
+                    }]}
+                  />
+                </div>
                 <table className="w-full min-w-[40rem] border-collapse text-sm">
                   <thead>
                     <tr className="border-b border-pop-bord text-left text-xs uppercase tracking-wide text-pop-gris">

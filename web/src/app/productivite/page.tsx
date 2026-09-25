@@ -12,6 +12,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Coquille } from "@/composants/Coquille";
+import { ExportSections } from "@/composants/ExportSections";
 import { FournisseurSession } from "@/composants/ContexteSession";
 import { AvisArrete } from "@/composants/AvisArrete";
 import { arreteAffiche } from "@/lib/arretes";
@@ -133,6 +134,32 @@ export default async function PageProductivite({
               {r.donnees.message}
             </p>
           ) : (
+            <>
+            <ExportSections
+              titre={`Productivite par ${niveau}`}
+              sousTitre={`Arrete du ${dateLongue(arrete)} (interets, capital et penalites encaisses ; PAR30 en fraction)`}
+              nom={`PopPilot_productivite_${niveau}_${arrete}`}
+              sections={[{
+                colonnes: [
+                  { libelle: parAgence ? "Agence" : "Nom", cle: "designation" },
+                  ...(parAgence ? [] : [{ libelle: "Agence", cle: "agence" }]),
+                  { libelle: "Statut", cle: "statut" },
+                  { libelle: "Interets encaisses", cle: "interets_encaisses" },
+                  { libelle: "Capital encaisse", cle: "capital_encaisse" },
+                  { libelle: "Penalites", cle: "penalites_encaissees" },
+                  { libelle: "Encours", cle: "encours" },
+                  { libelle: "Credits", cle: "nb_credits" },
+                  { libelle: "% PAR30", cle: "pct_par30" },
+                  { libelle: "Decaisse (nb)", cle: "decaisse_nombre" },
+                  { libelle: "Decaisse (volume)", cle: "decaisse_volume" },
+                  ...(parAgence && r.donnees.roster_du_mois ? [{ libelle: "Decaisse / agent", cle: "decaisse_par_agent" }] : []),
+                ],
+                lignes: [
+                  ...r.donnees.lignes,
+                  ...(r.donnees.totaux ? [{ ...r.donnees.totaux, designation: "Total", statut: "" }] : []),
+                ],
+              }]}
+            />
             <section className="overflow-x-auto rounded-xl border border-pop-bord bg-pop-carte shadow-sm">
               <table className="w-full min-w-[62rem] border-collapse text-sm">
                 <thead className="bg-pop-bleu">
@@ -198,6 +225,7 @@ export default async function PageProductivite({
                 )}
               </table>
             </section>
+            </>
           )}
         </div>
       </Coquille>

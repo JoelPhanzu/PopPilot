@@ -14,7 +14,10 @@ Source unique : l'inventaire dépôt (fait_epargne), un instantané par mois.
 
 NIVEAUX : agence | produit | type (à vue / à terme / obligatoire) | client (limité aux plus gros
 soldes). FILTRES : agence, devise, type_depot, sexe (H = « 1 », F = « 2 », PM = non renseigné),
-groupe (oui / non). INVARIANT : Σ lignes = total, pour les montants et les comptes (les
+groupe (oui / non : produits de groupe), statut juridique du titulaire (pp / pm / groupe :
+codes CBS 1 / 2 / 4) — « personnes morales seulement » sans passer par les produits de groupe.
+Niveau client : nom, statut, encours crédit DU CLIENT (même code client dans l'extraction
+crédit) et couverture épargne / crédit du client. Niveau produit : type et devise du produit. INVARIANT : Σ lignes = total, pour les montants et les comptes (les
 épargnants, clients distincts, ne s'additionnent pas entre lignes).
 
 Aucune règle nouvelle : même classification des produits et même conversion que engine.epargne
@@ -34,6 +37,8 @@ SEXES = {"H": "1", "F": "2"}
 _COL_NIVEAU = {"agence": FaitEpargne.agence, "produit": FaitEpargne.libelle_produit,
                "type": FaitEpargne.type_depot, "client": FaitEpargne.id_client}
 LIBELLE_TYPE = {"a_vue": "À vue", "a_terme": "À terme", "obligatoire": "Obligatoire"}
+STATUTS = {"pp": "1", "pm": "2", "groupe": "4"}
+LIBELLE_STATUT = {"1": "Personne physique", "2": "Personne morale", "4": "Groupe solidaire"}
 
 
 def _conditions(filtres: dict) -> list:
@@ -50,6 +55,8 @@ def _conditions(filtres: dict) -> list:
         c.append(E.sexe.is_(None) if sx == "PM" else E.sexe == SEXES[sx])
     if filtres.get("groupe") in ("oui", "non"):
         c.append(E.est_groupe.is_(filtres["groupe"] == "oui"))
+    if filtres.get("statut") in STATUTS:
+        c.append(E.statut_juridique == STATUTS[filtres["statut"]])
     return c
 
 
@@ -106,6 +113,8 @@ def tableau_de_bord_epargne(date_arrete: dt.date, debut: dt.date | None = None,
     filtres = {k: v for k, v in (filtres or {}).items() if v}
     if filtres.get("sexe") and filtres["sexe"].upper() not in ("H", "F", "PM"):
         raise ValueError(f"sexe inconnu : {filtres['sexe']} (attendu H, F ou PM)")
+    if filtres.get("statut") and filtres["statut"] not in STATUTS:
+        raise ValueError(f"statut inconnu : {filtres['statut']} (attendu pp, pm ou groupe)")
     from engine.etats_financiers import taux_change
 
     E = FaitEpargne
@@ -158,6 +167,22 @@ def tableau_de_bord_epargne(date_arrete: dt.date, debut: dt.date | None = None,
         if niveau == "agence":
             credit = dict(s.execute(select(FaitCredit.agence, func.sum(FaitCredit.encours)).where(
                 FaitCredit.date_arrete == date_arrete).group_by(FaitCredit.agence)).all())
+        infos: dict = {}
+        if niveau == "client":
+            for k, nom, st in s.execute(select(E.id_client, func.max(E.nom_client),
+                                               func.max(E.statut_juridique)).where(
+                    E.date_arrete == date_arrete, *cond).group_by(E.id_client)):
+                infos[k] = {"nom_client": nom, "statut_juridique": LIBELLE_STATUT.get(st, st)}
+            # Même code client dans l'inventaire et l'extraction crédit (vérifié : 8 120 noms
+            # identiques sur 8 121 en juillet 2026) : encours crédit DU client, toutes agences.
+            credit = {str(k): v for k, v in s.execute(
+                select(FaitCredit.numero_client, func.sum(FaitCredit.encours)).where(
+                    FaitCredit.date_arrete == date_arrete).group_by(FaitCredit.numero_client))}
+        elif niveau == "produit":
+            for k, ty, dv in s.execute(select(E.libelle_produit, func.max(E.type_depot),
+                                              func.max(E.devise)).where(
+                    E.date_arrete == date_arrete, *cond).group_by(E.libelle_produit)):
+                infos[k] = {"type_depot": LIBELLE_TYPE.get(ty, ty), "devise": dv}
         credit_total = s.execute(select(func.sum(FaitCredit.encours)).where(
             FaitCredit.date_arrete == date_arrete,
             *([FaitCredit.agence == filtres["agence"]] if filtres.get("agence") else []))).scalar()
@@ -167,6 +192,8 @@ def tableau_de_bord_epargne(date_arrete: dt.date, debut: dt.date | None = None,
     def ligne(designation, cle, x, x_m1, f, epargnants, encours_credit):
         return {
             "designation": designation, "cle": cle,
+            "nom_client": None, "statut_juridique": None, "type_depot": None, "devise": None,
+            **infos.get(cle, {}),
             **{k: x.get(k, 0) for k in ("encours", "encours_usd_origine", "encours_cdf_origine",
                                          "nb_comptes", "nb_comptes_crediteurs", "a_vue", "a_terme",
                                          "obligatoire")},
@@ -184,6 +211,9 @@ def tableau_de_bord_epargne(date_arrete: dt.date, debut: dt.date | None = None,
     # La couverture n'a de sens que sur toute l'épargne d'une agence (ou de MICROPOP) :
     # un filtre devise / type / sexe / groupe découpe l'épargne, pas le crédit.
     sans_filtre_agence = not any(k != "agence" for k in filtres)
+    # Par CLIENT, sexe et statut sont des attributs du client : tous ses comptes restent, la
+    # couverture reste juste. Seuls devise / type / produits de groupe découpent son épargne.
+    client_entier = not any(k in filtres for k in ("devise", "type_depot", "groupe"))
     lignes = [ligne(filtres.get("agence") or "MICROPOP", None, total, total_m1, flux_total, ep_total,
                     credit_total if sans_filtre_agence else None)]
 
@@ -197,7 +227,8 @@ def tableau_de_bord_epargne(date_arrete: dt.date, debut: dt.date | None = None,
         nom = (LIBELLE_TYPE.get(k, k) if niveau == "type" else k) or "(non renseigné)"
         lignes.append(ligne(nom, k, stock.get(k, {"encours": 0.0}), stock_m1.get(k), flux.get(k, vide),
                             ep_par.get(k, 0),
-                            credit.get(k) if niveau == "agence" and sans_filtre_agence else None))
+                            credit.get(k) if (niveau == "agence" and sans_filtre_agence)
+                            or (niveau == "client" and client_entier) else None))
 
     return {"arrete": date_arrete.isoformat(), "debut": debut.isoformat(), "fin": fin.isoformat(),
             "precedent": precedent.isoformat() if precedent else None, "niveau": niveau,
@@ -220,10 +251,14 @@ def top_epargnants(date_arrete: dt.date, n: int = 10, filtres: dict | None = Non
         usd = _usd(taux_change(s, date_arrete))
         solde = func.sum(usd(E.solde_actuel))
         lignes = s.execute(select(
-            E.id_client, func.min(E.agence), func.count(), solde,
+            E.id_client, func.max(E.nom_client), func.max(E.statut_juridique), func.min(E.agence),
+            func.count(), solde,
         ).where(E.date_arrete == date_arrete, *_conditions(filtres or {}))
             .group_by(E.id_client).order_by(solde.desc()).limit(n)).all()
     finally:
         s.close()
-    return [{"id_client": c, "agence": a, "nb_comptes": k, "solde_usd": v or 0.0}
-            for c, a, k, v in lignes]
+    # nom_client : absent d'un inventaire importé avant le 25/09/2026 (colonne ajoutée
+    # par SQL 09) → None, l'écran dit alors de réimporter l'inventaire du mois.
+    return [{"id_client": c, "nom_client": nom, "statut_juridique": LIBELLE_STATUT.get(st, st),
+             "agence": a, "nb_comptes": k, "solde_usd": v or 0.0}
+            for c, nom, st, a, k, v in lignes]

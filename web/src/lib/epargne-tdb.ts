@@ -10,6 +10,12 @@
 export type LigneEpargneTdb = {
   designation: string;
   cle: string | null;
+  /** Niveau client : nom complet et statut juridique (null si inventaire importe avant le 25/09/2026). */
+  nom_client: string | null;
+  statut_juridique: string | null;
+  /** Niveau produit : type de depot et devise du produit. */
+  type_depot: string | null;
+  devise: string | null;
   encours: number;
   encours_usd_origine: number;
   encours_cdf_origine: number;
@@ -49,7 +55,15 @@ export type TableauDeBordEpargne = {
 export type TopEpargnants = {
   arrete: string;
   n: number;
-  clients: { id_client: string; agence: string | null; nb_comptes: number; solde_usd: number }[];
+  clients: {
+    id_client: string;
+    /** Nom complet de l'inventaire ; null si l'inventaire a ete importe avant le 25/09/2026. */
+    nom_client: string | null;
+    statut_juridique: string | null;
+    agence: string | null;
+    nb_comptes: number;
+    solde_usd: number;
+  }[];
 };
 
 export const NIVEAUX_EPARGNE = [
@@ -63,8 +77,10 @@ export const NIVEAUX_EPARGNE = [
 export const FILTRES_EPARGNE = [
   { cle: "devise", libelle: "Devise", valeurs: [["USD", "USD"], ["CDF", "CDF"]] },
   { cle: "type_depot", libelle: "Type", valeurs: [["a_vue", "A vue"], ["a_terme", "A terme"], ["obligatoire", "Obligatoire"]] },
-  { cle: "sexe", libelle: "Titulaire", valeurs: [["H", "Hommes"], ["F", "Femmes"], ["PM", "Personnes morales / groupes"]] },
-  { cle: "groupe", libelle: "Groupes", valeurs: [["oui", "Groupes seulement"], ["non", "Hors groupes"]] },
+  { cle: "sexe", libelle: "Sexe", valeurs: [["H", "Hommes"], ["F", "Femmes"], ["PM", "Sans sexe (PM / groupes)"]] },
+  // Statut juridique du TITULAIRE (code CBS 1 / 2 / 4), independant des produits de groupe.
+  { cle: "statut", libelle: "Statut juridique", valeurs: [["pp", "Personnes physiques"], ["pm", "Personnes morales seulement"], ["groupe", "Groupes solidaires"]] },
+  { cle: "groupe", libelle: "Produits de groupe", valeurs: [["oui", "Groupes seulement"], ["non", "Hors groupes"]] },
 ] as const;
 
-export const CLES_FILTRES_EPARGNE = ["agence", "devise", "type_depot", "sexe", "groupe"] as const;
+export const CLES_FILTRES_EPARGNE = ["agence", "devise", "type_depot", "sexe", "statut", "groupe"] as const;

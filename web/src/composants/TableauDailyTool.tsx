@@ -74,10 +74,16 @@ const ETIQUETTE: Record<string, string> = { orphelin: "hors roster", gele: "agen
 export function TableauDailyTool({
   lignes,
   liens = {},
+  titre = "DailyTool",
+  exporter,
 }: {
   lignes: LigneTdb[];
   /** « agence|designation » → lien vers le niveau inferieur (absent = pas de descente). */
   liens?: Record<string, string>;
+  /** Intitule du bandeau (ex. « DailyTool — par agence »). */
+  titre?: string;
+  /** Boutons CSV / Excel / PDF du tableau (fournis par la page, comme pour le Top clients). */
+  exporter?: React.ReactNode;
 }) {
   const groupes: { nom: string; taille: number }[] = [];
   for (const c of COLONNES) {
@@ -86,7 +92,13 @@ export function TableauDailyTool({
     else groupes.push({ nom: c.groupe, taille: 1 });
   }
   return (
-    <section className="overflow-x-auto rounded-xl border border-pop-bord bg-pop-carte shadow-sm">
+    <section className="rounded-xl border border-pop-bord bg-pop-carte shadow-sm">
+      <div className="flex flex-wrap items-center gap-3 border-b border-pop-bord px-4 py-3">
+        <h2 className="text-base font-semibold text-pop-encre">{titre}</h2>
+        <span className="text-xs text-pop-gris">{lignes.length} ligne{lignes.length > 1 ? "s" : ""}</span>
+        <div className="ml-auto">{exporter}</div>
+      </div>
+      <div className="overflow-x-auto">
       <table className="min-w-max border-collapse text-[12px]">
         <thead>
           <tr className="bg-pop-bleu-2 text-white/90">
@@ -138,6 +150,7 @@ export function TableauDailyTool({
           ))}
         </tbody>
       </table>
+      </div>
     </section>
   );
 }

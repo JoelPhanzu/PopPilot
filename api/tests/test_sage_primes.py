@@ -314,7 +314,7 @@ def test_import_taux_journaliers():
         importer_taux(conflit, db_path=DB)
         raise AssertionError("un taux existant a été écrasé sans accord")
     except ValueError as e:
-        assert "2026-10-01" in str(e) and "Rien n'a été importé" in str(e)
+        assert "01/10/2026" in str(e) and "Rien n'a été importé" in str(e)
     assert importer_taux(conflit, remplacer="oui", db_path=DB)["remplaces"] == 1
     for mauvais in ([("Date", "Taux"), ("01/13/2026", 2300)], [("Date", "Taux"), ("05/10/2026", 0)],
                     [("Jour", "Valeur"), ("05/10/2026", 2300)],

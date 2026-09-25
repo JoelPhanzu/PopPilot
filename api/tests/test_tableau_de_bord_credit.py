@@ -289,9 +289,11 @@ def test_exports_csv_xlsx():
         assert any(v and v[1] == "AGENCE DE VICTOIRE" for v in ws.iter_rows(values_only=True))
         t = appel(X.export_tableau_clients, arrete=MAI.isoformat(), n=30)
         assert t.body.decode("utf-8").count("meilleurs;") == 30
+        p = appel(X.export_tableau_credit, arrete=MAI.isoformat(), format="pdf", niveau="agence")
+        assert p.body[:5] == b"%PDF-" and p.media_type == "application/pdf"
         try:
-            appel(X.export_tableau_credit, arrete=MAI.isoformat(), format="pdf")
-            raise AssertionError("format pdf aurait dû être refusé (422)")
+            appel(X.export_tableau_credit, arrete=MAI.isoformat(), format="doc")
+            raise AssertionError("format inconnu aurait dû être refusé (422)")
         except HTTPException as e:
             assert e.status_code == 422
         agence = {"login": "v", "role": "AGENCE", "agence": "AGENCE DE VICTOIRE"}
@@ -303,7 +305,7 @@ def test_exports_csv_xlsx():
 
 if __name__ == "__main__":
     code = D.lancer("Tableau de bord credit complet", [
-        (test_exports_csv_xlsx, "Exports CSV / Excel = écran ; AGENCE limitée à sa ligne"),
+        (test_exports_csv_xlsx, "Exports CSV / Excel / PDF = écran ; AGENCE limitée à sa ligne"),
         (test_micropop_egale_dashboard_mai, "MICROPOP mai = Dashboard (décaissements, CR, migrations, croissance, provisions)"),
         (test_agences_egalent_dashboard_et_somme, "Agences = Dashboard ; Σ agences = MICROPOP"),
         (test_periode_de_flux_libre_et_p15, "Flux 1-15 / 16-31 mai = 134 / 383 ; P15 ; stock inchangé"),

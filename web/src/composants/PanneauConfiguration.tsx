@@ -15,6 +15,7 @@
  */
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
+import { ExportSections } from "@/composants/ExportSections";
 import {
   ETAT_CONFIGURATION_INITIAL,
   EFFET_STATUT,
@@ -462,6 +463,20 @@ export function PanneauConfiguration({
             <summary className="cursor-pointer text-[13px] font-medium text-pop-bleu-2">
               Voir et modifier les {entier(mapping.nb_comptes)} affectations en vigueur
             </summary>
+            <div className="mt-2">
+              <ExportSections
+                titre="Mapping compte - ligne budgetaire"
+                nom="PopPilot_mapping_budget"
+                sections={[{
+                  colonnes: [
+                    { libelle: "Compte", cle: "numero_compte" },
+                    { libelle: "Ligne budgetaire", cle: "ligne_budgetaire" },
+                    { libelle: "Sens", cle: "sens" },
+                  ],
+                  lignes: mapping.lignes,
+                }]}
+              />
+            </div>
             <div className="mt-2 max-h-96 overflow-y-auto rounded-lg border border-pop-bord">
               <table className="w-full border-collapse">
                 <thead className="sticky top-0 bg-pop-fond">

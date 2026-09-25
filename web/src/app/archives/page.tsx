@@ -10,6 +10,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Coquille } from "@/composants/Coquille";
+import { ExportSections } from "@/composants/ExportSections";
 import { FournisseurSession } from "@/composants/ContexteSession";
 import { FormulaireArchive } from "@/composants/FormulaireArchive";
 import { FormulairesSeries } from "@/composants/FormulairesSeries";
@@ -190,6 +191,17 @@ export default async function PageArchives({
                             titre={`${LIBELLES_INDICATEUR[serie.donnees.indicateur] ?? serie.donnees.indicateur} — ${serie.donnees.agence ?? "MICROPOP"}`}
                             points={serie.donnees.points}
                             unite={serie.donnees.points[0]?.unite ?? null}
+                          />
+                          <ExportSections
+                            titre={`Serie ${LIBELLES_INDICATEUR[serie.donnees.indicateur] ?? serie.donnees.indicateur} - ${serie.donnees.agence ?? "MICROPOP"}`}
+                            nom={`PopPilot_serie_${serie.donnees.indicateur}_${serie.donnees.agence ?? "MICROPOP"}`}
+                            sections={[{
+                              colonnes: [
+                                { libelle: "Date", cle: "date" }, { libelle: "Valeur", cle: "valeur" },
+                                { libelle: "Unite", cle: "unite" }, { libelle: "Source", cle: "source" },
+                              ],
+                              lignes: serie.donnees.points,
+                            }]}
                           />
                           <details>
                             <summary className="cursor-pointer text-sm text-pop-bleu-2">Voir les valeurs</summary>

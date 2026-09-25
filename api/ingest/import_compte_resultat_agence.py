@@ -2,10 +2,10 @@
 Import du compte de résultat PAR AGENCE (chantier 3) → table compte_resultat_agence.
 
 La lecture et le contrôle sont ceux du moteur fourni (engine/import_compte_resultat_agence :
-feuille Feuil2, colonne A = poste, B..G = 6 agences, H = MICROPOP). Ce module ne fait que
+feuille Feuil2, colonne A = poste, agences reconnues par l'en-tête jusqu'à MICROPOP). Ce module ne fait que
 les ÉCRIRE, avec les règles d'import du socle :
   - idempotent (I-4) : réimporter un mois remplace ce mois, et seulement lui ;
-  - INTÉGRITÉ : si la colonne MICROPOP ≠ somme des 6 agences sur un poste, on REFUSE
+  - INTÉGRITÉ : si la colonne MICROPOP ≠ somme des agences sur un poste, on REFUSE
     l'import (ValueError → 400). Un compte de résultat incohérent chargé « avec alerte »
     finirait dans les primes de direction sans que personne relise l'alerte.
   - journalisé dans import_log (I-9).

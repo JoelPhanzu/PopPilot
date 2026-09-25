@@ -13,7 +13,8 @@ import { recupererFichierApi } from "@/lib/api";
 const PARAMETRES: Record<string, readonly string[]> = {
   credit: ["arrete", "debut", "fin", "precedent", "niveau", "agence", "sexe", "produits", "duree",
     "client", "agent", "superviseur", "format"],
-  epargne: ["arrete", "debut", "fin", "niveau", "agence", "devise", "type_depot", "sexe", "groupe", "format"],
+  epargne: ["arrete", "debut", "fin", "niveau", "agence", "devise", "type_depot", "sexe", "statut", "groupe", "format"],
+  taux: ["debut", "fin", "format"],
   clients: ["arrete", "debut", "fin", "n", "critere", "agence", "sexe", "produits", "duree", "agent",
     "superviseur", "format"],
 };

@@ -38,6 +38,8 @@ SUITES = [
     ("test_filtres_credit.py",     "Credit filtre (GET /credit/filtre)"),
     ("test_tableau_de_bord_credit.py", "Tableau de bord credit complet"),
     ("test_sage_primes.py",        "SAGE, compte de resultat agence, primes"),
+    ("test_exports_formats.py",    "Imports multi-formats et exports CSV/Excel/PDF"),
+    ("test_import_masse.py",       "Import en masse (outils/import_masse.py)"),
     ("test_primes_ac_sup.py",      "Primes agents de credit et superviseurs"),
     ("test_productivite.py",       "Productivite (remboursements + profil)"),
     ("test_eljo.py",               "Eljo Smart (POST /eljo)"),

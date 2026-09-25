@@ -132,11 +132,13 @@ DOMAINES: dict[str, Domaine] = {
     ),
     "compte_resultat_agence": Domaine(
         libelle="Compte de résultat par agence (fichier isolé du CDG)",
-        fonction=importer_compte_resultat_agence, extensions=(".xlsx", ".xlsm"),
+        fonction=importer_compte_resultat_agence,
+        extensions=(".xlsx", ".xlsm", ".xls", ".csv", ".pdf"),
         requis=("date_arrete",), optionnels=("feuille",), journalise=True,
-        aide="Fichier mensuel COMPTE_RESULTAT_<mois>_isolé.xlsx, feuille Feuil2 : colonne A = "
-             "poste, B..G = Victoire, Ozone, Goma, Lubumbashi, Masina, Gombe, H = MICROPOP. "
-             "Refusé si la colonne MICROPOP ne redonne pas la somme des 6 agences.",
+        aide="Fichier mensuel du CDG en Excel (feuille Feuil2), CSV ou PDF (tableau texte) : "
+             "colonne A = poste, puis une colonne par agence (Victoire, Ozone, Goma, Lubumbashi, "
+             "Masina, Gombe — celles du mois) et MICROPOP ; ce qui suit MICROPOP est ignoré. "
+             "Refusé si la colonne MICROPOP ne redonne pas la somme des agences.",
     ),
     "remboursements": Domaine(
         libelle="Crédits remboursés (intérêts encaissés du mois)",
@@ -149,12 +151,13 @@ DOMAINES: dict[str, Domaine] = {
     ),
     "taux_change": Domaine(
         libelle="Taux de change USD→CDF (fichier Date | Taux)",
-        fonction=importer_taux, extensions=(".xlsx", ".xlsm"),
+        fonction=importer_taux, extensions=(".xlsx", ".xlsm", ".xls", ".csv"),
         requis=(), optionnels=("remplacer",), journalise=False,
-        aide="Deux colonnes : Date et Taux (un taux par jour). Les dates nouvelles sont "
-             "ajoutées, les identiques ignorées. Une date déjà en base avec un AUTRE taux "
-             "bloque l'import (elle sert au FINA, à l'AML) : écrire « oui » dans Remplacer "
-             "pour l'écraser sciemment.",
+        aide="Colonnes Date et Taux (un taux par jour), ou l'extraction brute du site de la "
+             "BCC (colonne USD/CDF). Les dates nouvelles sont ajoutées, les identiques ignorées. "
+             "Une date déjà en base avec un AUTRE taux : Remplacer = OUI pour écraser par le "
+             "taux du fichier, NON pour importer les nouvelles dates en gardant les taux "
+             "existants ; vide = refus avec la liste des conflits.",
     ),
     "budget": Domaine(
         libelle="Budget annuel (charges et produits consolidés)",
@@ -390,6 +393,10 @@ def endpoint_import(domaine: str,
                     devise: str | None = Form(None),
                     exercice: int | None = Form(None),
                     hypothese: str | None = Form(None),
+                    # Taux de change : OUI = écraser les taux en conflit, NON = les garder.
+                    # Sans ce champ déclaré, FastAPI JETAIT la réponse du formulaire en
+                    # silence : « OUI » n'arrivait jamais à l'import.
+                    remplacer: str | None = Form(None),
                     user: dict = Depends(utilisateur_courant)):
     """Charge un fichier du CBS dans le socle. Réservé à DIRECTION / CDG.
 
@@ -415,6 +422,7 @@ def endpoint_import(domaine: str,
         "date_arrete": date_arrete, "date_effet": date_effet, "feuille": feuille,
         "feuille_charges": feuille_charges, "feuille_produits": feuille_produits,
         "devise": devise, "exercice": exercice, "hypothese": hypothese,
+        "remplacer": remplacer,
     })
     nom = _nom_sain(fichier.filename, spec.extensions)
 

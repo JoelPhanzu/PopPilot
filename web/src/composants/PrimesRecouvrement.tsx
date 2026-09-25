@@ -6,6 +6,7 @@
  * La ligne TOTAL du fichier sert de controle : un ecart est affiche en alerte.
  */
 import { useActionState } from "react";
+import { ExportSections } from "@/composants/ExportSections";
 import { calculerRecouvrement } from "@/app/primes/actions";
 import { montant } from "@/lib/format";
 import type { EtatAction, PrimesRecouvrement as Reponse } from "@/lib/primes";
@@ -53,6 +54,33 @@ export function PrimesRecouvrement() {
               ))}
             </ul>
           )}
+          <ExportSections
+            titre="Primes de recouvrement"
+            sousTitre={`Fichier ${r.fichier}`}
+            nom="PopPilot_primes_recouvrement"
+            sections={[
+              {
+                titre: "Agents",
+                colonnes: [
+                  { libelle: "Equipe", cle: "equipe" }, { libelle: "Agent", cle: "agent" }, { libelle: "Agence", cle: "agence" },
+                  { libelle: "Recouvre 91-180", cle: "m91_180" }, { libelle: "Recouvre 181-360", cle: "m181_360" },
+                  { libelle: "Recouvre radie", cle: "radie" }, { libelle: "Prime", cle: "prime" },
+                ],
+                lignes: [...r.agents, {
+                  agent: "TOTAL", m91_180: r.total_recouvre["91-180"], m181_360: r.total_recouvre["181-360"],
+                  radie: r.total_recouvre.radie, prime: r.total_primes_agents,
+                }],
+              },
+              {
+                titre: "Responsable",
+                colonnes: [{ libelle: "Element", cle: "element" }, { libelle: "Montant", cle: "montant" }],
+                lignes: [
+                  ...Object.entries(r.responsable.detail).map(([element, montant]) => ({ element, montant })),
+                  { element: "Prime du responsable", montant: r.responsable.prime },
+                ],
+              },
+            ]}
+          />
           <div className="overflow-x-auto">
             <table className="w-full min-w-[44rem] border-collapse text-sm">
               <thead>

@@ -27,7 +27,7 @@ from socle.schema import BASE_PAR_DEFAUT  # noqa: E402
 BASE = BASE_PAR_DEFAUT
 
 
-def _filtres(user, agence, devise, type_depot, sexe, groupe) -> dict:
+def _filtres(user, agence, devise, type_depot, sexe, groupe, statut=None) -> dict:
     if devise and devise.upper() not in ("USD", "CDF"):
         raise HTTPException(422, f"devise inconnue : {devise} (attendu USD ou CDF)")
     if type_depot and type_depot not in ("a_vue", "a_terme", "obligatoire"):
@@ -36,8 +36,10 @@ def _filtres(user, agence, devise, type_depot, sexe, groupe) -> dict:
         raise HTTPException(422, f"sexe inconnu : {sexe} (attendu H, F ou PM)")
     if groupe and groupe not in ("oui", "non"):
         raise HTTPException(422, f"groupe : attendu oui ou non, reçu {groupe}")
+    if statut and statut not in ("pp", "pm", "groupe"):
+        raise HTTPException(422, f"statut inconnu : {statut} (attendu pp, pm ou groupe)")
     return {"agence": _agence_imposee(user, agence), "devise": devise, "type_depot": type_depot,
-            "sexe": sexe, "groupe": groupe}
+            "sexe": sexe, "groupe": groupe, "statut": statut}
 
 
 @routeur.get("/epargne/tableau-de-bord")
@@ -49,11 +51,12 @@ def endpoint_tableau_de_bord_epargne(
         limite: int = Query(300, ge=1, le=10000),
         agence: str | None = None, devise: str | None = None, type_depot: str | None = None,
         sexe: str | None = None, groupe: str | None = None,
+        statut: str | None = None,             # pp | pm | groupe (statut juridique du titulaire)
         user: dict = Depends(utilisateur_courant)):
     from engine.tableau_de_bord_epargne import NIVEAUX, tableau_de_bord_epargne
     if niveau not in NIVEAUX:
         raise HTTPException(422, f"niveau inconnu : {niveau} (attendu {', '.join(NIVEAUX)})")
-    f = _filtres(user, agence, devise, type_depot, sexe, groupe)
+    f = _filtres(user, agence, devise, type_depot, sexe, groupe, statut)
     if not arrete:
         from sqlalchemy import func, select
         from socle.schema import FaitEpargne, get_session
@@ -76,9 +79,9 @@ def endpoint_top_epargnants(
         arrete: str = Query(..., description="Date de valorisation AAAA-MM-JJ"),
         n: int = Query(10, ge=1, le=500),
         agence: str | None = None, devise: str | None = None, type_depot: str | None = None,
-        sexe: str | None = None, groupe: str | None = None,
+        sexe: str | None = None, groupe: str | None = None, statut: str | None = None,
         user: dict = Depends(utilisateur_courant)):
     from engine.tableau_de_bord_epargne import top_epargnants
-    f = _filtres(user, agence, devise, type_depot, sexe, groupe)
+    f = _filtres(user, agence, devise, type_depot, sexe, groupe, statut)
     return {"arrete": arrete, "n": n,
             "clients": top_epargnants(_d(arrete), n, f, db_path=BASE)}

@@ -48,6 +48,12 @@ def _f(v):
         return 0.0
 
 
+def _code(v):
+    """Code du CBS (1, « 1 », 1.0 → « 1 ») ; vide → None."""
+    t = str(v).strip() if v is not None else ""
+    return (t[:-2] if t.endswith(".0") else t) or None
+
+
 def _d(v):
     if not v:
         return None
@@ -108,7 +114,7 @@ def verifier_colonnes(ligne, attendues=COLONNES_ATTENDUES):
     if manquantes:
         raise ValueError(
             f"Inventaire dépôt : colonnes absentes {manquantes}. "
-            f"Colonnes trouvées : {sorted(ligne)[:30]}. "
+            f"Colonnes trouvées : {sorted(str(k) for k in ligne if k)[:30]}. "
             "Vérifier l'export CBS (en-têtes attendus : id_cpte, devise, solde_fin…).")
 
 
@@ -130,6 +136,8 @@ def importer_epargne(path, date_arrete: dt.date, *, date_snapshot=None,
             id_compte=str(row.get("id_cpte")).strip(),
             num_complet_cpte=row.get("num_complet_cpte"),
             id_client=str(row.get("id_client") or "").strip(),
+            nom_client=(" ".join(str(row.get("nom_complet") or "").split()) or None),
+            statut_juridique=_code(row.get("statut_juridique")),
             id_prod=str(row.get("id_prod") or "").strip(),
             libelle_produit=libelle,
             agence=row.get("libelle_niveau"),

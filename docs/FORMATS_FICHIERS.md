@@ -40,9 +40,14 @@ tous les agents actifs, même sans objectif. Les agences FERMÉES ou SUSPENDUES 
 « portefeuille gelé », jamais orphelin, et restent dans l'encours.
 
 ## 2. Taux de change journaliers — page Import, domaine « taux_change »
-Première feuille, deux colonnes : **Date | Taux** (USD→CDF), un taux par jour.
-Une date déjà en base avec un autre taux bloque l'import (elle sert au FINA/AML) : écrire
-« oui » dans « Remplacer » pour l'écraser volontairement.
+.xlsx / .xlsm / .xls / .csv, première feuille : **Date | Taux** (USD→CDF), un taux par jour —
+OU l'extraction **brute du site de la BCC** (`cours-de-change.xlsx` : Date | USD/CDF | EUR/CDF…),
+dont seule la colonne USD/CDF est lue. Virgule ou point décimal acceptés.
+Date déjà en base avec un AUTRE taux — champ « Remplacer » :
+**OUI** = le taux du fichier écrase celui de la base ; **NON** = les nouvelles dates sont
+ajoutées, les taux existants gardés ; vide = refus avec la liste des conflits.
+Consultation : page **Taux de change** (ordre chronologique, filtre début/fin, export CSV /
+Excel / PDF de la liste filtrée).
 
 ## 3. Crédits remboursés — page Import, domaine « remboursements »
 Export CBS tel quel (feuille Worksheet, 9 colonnes : Date | N° échéance | N° client | Noms |
@@ -50,8 +55,15 @@ N° dossier | Montant déboursé | Capital | Intérêts | Pénalités). Importer
 du même arrêté. Sert la productivité (pas les primes).
 
 ## 4. Compte de résultat par agence — page Import, domaine « compte_resultat_agence »
-Fichier COMPTE_RESULTAT_<mois>_isolé.xlsx, feuille **Feuil2** : A = poste, B→G = Victoire,
-Ozone, Goma, Lubumbashi, Masina, Gombe, H = MICROPOP. Refusé si MICROPOP ≠ somme des agences.
+Formats acceptés : **.xlsx / .xlsm / .xls** (feuille **Feuil2**), **.csv** (séparateur `;`, `,`
+ou tabulation ; UTF-8 ou Windows-1252 ; virgule décimale acceptée) ou **.pdf** (tableau TEXTE —
+un PDF exporté depuis Excel ; un scan n'est pas lisible). Négatifs en `-1 234,56` ou `(1 234,56)`.
+
+Lecture par les **en-têtes** : A = poste ; la ligne d'en-tête est celle qui porte **MICROPOP** ;
+les colonnes entre A et MICROPOP sont les agences, reconnues par leur nom (Victoire, Ozone, Goma,
+Lubumbashi, Masina, Gombe — celles du mois : 4 agences en janvier 2025, 6 aujourd'hui). Ce qui
+suit MICROPOP (mois précédent recopié) est ignoré. Refusé si : MICROPOP ≠ somme des agences sur
+un poste, colonne d'agence inconnue, ou aucune cellule « MICROPOP ».
 
 ## 5. Recouvrement — page Primes
 **Équipe | Agent | Agence | Montant 91-180 | Montant 181+ | Montant Radié**, puis une ligne

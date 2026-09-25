@@ -26,6 +26,7 @@ const NAVIGATION: Entree[] = [
   { href: "/productivite", libelle: "Productivite", pret: true },
   { href: "/comptabilite", libelle: "Comptabilite & indicateurs", pret: true },
   { href: "/compte-resultat", libelle: "Compte d'exploitation agences", pret: true },
+  { href: "/taux", libelle: "Taux de change", pret: true },
   { href: "/epargne", libelle: "Epargne", pret: true },
   { href: "/budget", libelle: "Budget", pret: true },
   { href: "/rapports", libelle: "Rapports reglementaires", pret: true },

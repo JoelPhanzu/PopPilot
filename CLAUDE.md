@@ -472,3 +472,52 @@ streamlit run bench/app.py          # tableau de bord visuel
   date est résolue, les flux reprennent le mois de l'arrêté affiché.
 - **Configuration** (saisie DAF) garde la date saisie telle quelle : on y saisit pour un NOUVEL arrêté.
 - **Variation de provision** (PV-VAR) = provision à date − provision fin M-1, à côté du coût du risque.
+
+## Compte de résultat par agence : multi-formats + historique 2025 ; exports partout (25/09/2026)
+- **Import** (`engine/import_compte_resultat_agence.py`) : .xlsx/.xlsm/.xls/.csv/.pdf, lecture
+  **par les en-têtes** (MICROPOP = repère ; agences reconnues par nom ; colonnes après MICROPOP
+  ignorées ; intitulés à espaces normalisés). ⚠️ L'ancienne lecture à positions fixes (B→G, H)
+  aurait pris MICROPOP pour Masina sur les fichiers 2025 à 4-5 agences, et SAUTAIT le contrôle
+  quand H était vide → le contrôle MICROPOP = Σ agences s'applique désormais toujours.
+- **Prod** : jan → avr 2025 importés (+ juillet 2026 réimporté). **Mai → nov 2025 REFUSÉS** :
+  formule décalée dans la source sur « RESULTAT AVANT PROV. ET AMORTIS » (ex. août 2025 : Masina
+  `=+F35+H30…`, MICROPOP `=+H35+I30…`). Décision CDG : attendre la correction des fichiers.
+  Déc. 2025 : fichier absent.
+- **Exports CSV / Excel / PDF de tous les tableaux** : `POST /export/sections` (export_tableaux.py)
+  reçoit les lignes BRUTES affichées (déjà cloisonnées) et n'écrit que le fichier ; composant
+  `web/src/composants/ExportSections.tsx`. Crédit/épargne/Top clients : `format=pdf` ajouté aux
+  GET existants. PDF = reportlab (A4 paysage, en-têtes répétés) ; « Imprimer » garde l'écran.
+- Tests : `tests/test_exports_formats.py` (xlsx = xls = csv = pdf ; en-têtes ; 422/413).
+
+## Taux de change — import OUI/NON corrigé + page de consultation (25/09/2026)
+- ⚠️ BUG corrigé : `remplacer` n'était PAS déclaré dans `POST /import` (import_cbs.py) → FastAPI
+  jetait le champ du formulaire, « OUI » n'arrivait jamais à l'import (même refus en boucle).
+  Le test ne couvrait que `importer_taux` en direct : désormais testé VIA L'ENDPOINT
+  (`test_import_api.py::test_taux_remplacer_oui_non_par_le_web`).
+- Doctrine (CDG) : le fichier de la BCC fait foi. OUI = écraser ; NON = ajouter les nouvelles
+  dates sans toucher aux existantes ; vide = refus listant les conflits. Réponse ambiguë → 400.
+- Formats : .xlsx/.xlsm/.xls/.csv ; extraction brute BCC acceptée (colonne USD/CDF).
+- Page `/taux` (web) + `GET /taux?debut&fin` (chronologique) + `GET /export/tableau/taux`
+  (csv/xlsx/pdf, mêmes filtres). api/taux.py.
+
+## Import en masse hors interface — `api/outils/import_masse.py` (25/09/2026)
+- Pour l'historique lourd (20 mois d'inventaires ≈ 1,5 Go > 500 Mo Supabase gratuit) :
+  **décision CDG = attendre les serveurs MICROPOP**. Mode d'emploi : docs/INSTALLATION_SERVEUR_LOCAL.md.
+- Appelle `importer_epargne` / `importer_credit` (jamais de SQL brut : classement, purge,
+  journal). Mois lu dans le NOM (ambigu → refus), --a-blanc, reprise (mois en base sautés),
+  --remplacer, --correspondance, --base-sqlite. Test : tests/test_import_masse.py.
+- Vérifié à blanc sur l'inventaire réel de juillet 2026 : 169 799 comptes (38 s de lecture).
+
+## Épargne : nom des clients (25/09/2026)
+- `fait_epargne.nom_client` (SQL 09, exécuté en prod) ← colonne `nom_complet` de l'inventaire.
+  Top épargnants : code + NOM + export CSV/Excel/PDF. Inventaires importés avant le 25/09 : pas de
+  nom → l'écran le dit ; réimporter le mois (août 2026 à réimporter).
+- **Statut juridique** (`fait_epargne.statut_juridique`, SQL 10, exécuté en prod) : 1 = personne
+  physique, 2 = personne morale, 4 = groupe solidaire. Filtre `statut=pp|pm|groupe` INDÉPENDANT
+  du filtre produits de groupe (« personnes morales seulement »). Réinitialisation des filtres.
+- Niveau client : nom, statut, encours crédit DU client (même code client que l'extraction crédit,
+  vérifié 8 120/8 121 noms identiques) et couverture — gardée sous filtre sexe/statut (attributs
+  du client), retirée sous devise/type/groupe (découpent son épargne).
+- Onglets Produits et Types : résumé par type ET détail par produit (libellés de l'inventaire),
+  chacun avec ses exports ; explications sous chaque tableau ; colonnes sans objet masquées
+  (évolution sans inventaire M-1, crédit par produit/type). PDF plafonné à 3 000 lignes (413).

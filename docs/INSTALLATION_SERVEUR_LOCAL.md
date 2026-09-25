@@ -147,3 +147,23 @@ Site : `npm run start` sous NSSM. Proxy : IIS (ARR) ou nginx pour Windows.
    (encours 10 814 330,66 ; PAR30 1 052 118,05 ; 517 décaissements).
 3. Profil AGENCE : ne voit que son agence (crédit, épargne, exports).
 4. `GET /sante` de l'API (via le serveur) : base = PostgreSQL local, régime JWT actif.
+
+## Chargement de l'historique (fichiers lourds) — `api/outils/import_masse.py`
+
+À faire UNE FOIS la base installée sur le serveur (Supabase gratuit plafonné à 500 Mo :
+un inventaire dépôt ≈ 74 Mo, 20 mois ≈ 1,5 Go). Le script appelle la même fonction
+d'import que le site (mêmes règles, journal des imports), sans passer par le navigateur.
+
+1. Ranger les fichiers d'un même domaine dans un dossier, le MOIS dans chaque nom
+   (« Inventaire depot Janvier 2025.csv », « inventaire_2025-01.xlsx », « 01-2025 »…).
+2. Contrôle à blanc (n'écrit rien) :
+   `cd api` puis `.venv\Scripts\python.exe outils\import_masse.py "D:\Inventaires" --a-blanc`
+3. Import réel (la base de api/.env est affichée, taper OUI) :
+   `.venv\Scripts\python.exe outils\import_masse.py "D:\Inventaires"`
+4. Coupure ? Relancer la même commande : les mois déjà en base sont sautés.
+
+Options : `--domaine credit` (extractions crédit), `--remplacer` (refaire des mois déjà
+chargés), `--correspondance fichier.txt` (lignes « nom du fichier;AAAA-MM » pour un nom
+sans mois clair), `--oui` (sans confirmation, lancement planifié), `--base-sqlite essai.db`
+(répétition sur une base SQLite locale). Nom sans mois, à deux mois, ou deux fichiers pour
+un même mois → refus avant toute écriture.

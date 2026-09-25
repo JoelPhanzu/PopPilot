@@ -11,6 +11,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Coquille } from "@/composants/Coquille";
+import { ExportSections } from "@/composants/ExportSections";
 import { AvisArrete } from "@/composants/AvisArrete";
 import { arreteAffiche } from "@/lib/arretes";
 import { SelecteurArrete } from "@/composants/SelecteurArrete";
@@ -77,15 +78,33 @@ export default async function PageCompteResultat({
     <FournisseurSession profil={profil}>
       <Coquille profil={profil} actif="/compte-resultat">
         <div className="space-y-6">
-          <header>
-            <h1 className="text-2xl font-semibold tracking-tight text-pop-encre">
-              Compte d&apos;exploitation par agence
-            </h1>
-            <p className="mt-1 text-sm text-pop-gris">
-              {arrete ? `Situation de ${dateLongue(arrete)}` : "Aucun mois importe"} &middot; source :
-              fichier mensuel du controle de gestion (MICROPOP = somme des agences, verifie a
-              l&apos;import).
-            </p>
+          <header className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight text-pop-encre">
+                Compte d&apos;exploitation par agence
+              </h1>
+              <p className="mt-1 text-sm text-pop-gris">
+                {arrete ? `Situation de ${dateLongue(arrete)}` : "Aucun mois importe"} &middot; source :
+                fichier mensuel du controle de gestion (MICROPOP = somme des agences, verifie a
+                l&apos;import).
+              </p>
+            </div>
+            {cr?.ok && arrete && (
+              <ExportSections
+                titre="Compte d'exploitation par agence"
+                sousTitre={`Situation de ${dateLongue(arrete)}`}
+                nom={`PopPilot_compte_exploitation_${arrete}`}
+                imprimer
+                sections={[{
+                  colonnes: [
+                    { libelle: "Poste", cle: "poste" },
+                    ...cr.donnees.agences.map((a) => ({ libelle: court(a), cle: a })),
+                    ...(cr.donnees.agences.length > 1 ? [{ libelle: "MICROPOP", cle: "__total" }] : []),
+                  ],
+                  lignes: cr.donnees.postes.map((p) => ({ poste: p.poste, ...p.montants, __total: p.total })),
+                }]}
+              />
+            )}
           </header>
 
           {arretes.length > 0 && arrete && (

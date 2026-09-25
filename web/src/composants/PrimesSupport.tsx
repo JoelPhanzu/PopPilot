@@ -10,6 +10,7 @@
  * elle ne vaut pas 0 en silence.
  */
 import { useActionState } from "react";
+import { ExportSections } from "@/composants/ExportSections";
 import { calculerSupport } from "@/app/primes/actions";
 import { montant, pourcent } from "@/lib/format";
 import type { EtatAction, PrimesSupport as Reponse } from "@/lib/primes";
@@ -26,6 +27,23 @@ export function PrimesSupport({ arrete }: { arrete: string }) {
   return (
     <form action={agir} className="space-y-4">
       <input type="hidden" name="arrete" value={arrete} />
+      {r && (
+        <ExportSections
+          titre="Primes des fonctions support"
+          sousTitre={`Periode du ${r.arrete} (taux, PAR30 et couverture en fraction)`}
+          nom={`PopPilot_primes_support_${r.arrete}`}
+          sections={[{
+            colonnes: [
+              { libelle: "Agence", cle: "agence" }, { libelle: "Decaisse / objectif", cle: "taux_decaissement" },
+              { libelle: "PAR30", cle: "par30" }, { libelle: "Epargne / encours", cle: "couverture" },
+              { libelle: "Effectif", cle: "effectif" }, { libelle: "Prime decaissement", cle: "prime_decaissement" },
+              { libelle: "Prime epargne", cle: "prime_epargne" }, { libelle: "Prime PAR", cle: "prime_par" },
+              { libelle: "Prime unitaire", cle: "prime_unitaire" }, { libelle: "Prime totale agence", cle: "prime_totale_agence" },
+            ],
+            lignes: [...r.agences, { agence: "TOTAL", prime_totale_agence: r.total }],
+          }]}
+        />
+      )}
       {r && (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[52rem] border-collapse text-sm">

@@ -20,6 +20,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Coquille } from "@/composants/Coquille";
+import { ExportSections } from "@/composants/ExportSections";
 import { FournisseurSession } from "@/composants/ContexteSession";
 import { CarteIndicateur } from "@/composants/CarteIndicateur";
 import { BandeauSource } from "@/composants/BandeauSource";
@@ -180,6 +181,44 @@ export default async function PageEpargne({
   ]);
   const e = synthese?.donnees ?? null;
 
+  // Onglets Produits et Types : les DEUX lectures côte à côte — le résumé par type (à vue,
+  // à terme, obligatoire) et le détail des produits tels qu'ils figurent dans l'inventaire.
+  const niveauCompagnon = t.niveau === "type" ? "produit" : t.niveau === "produit" ? "type" : null;
+  const qc = new URLSearchParams(q);
+  if (niveauCompagnon) qc.set("niveau", niveauCompagnon);
+  qc.set("arrete", t.arrete);
+  qc.set("debut", t.debut);
+  qc.set("fin", t.fin);
+  const compagnon = niveauCompagnon
+    ? await appelerApi<TableauDeBordEpargne>(`/epargne/tableau-de-bord?${qc.toString()}`, jeton)
+    : null;
+  const exportDe = (niveauExport: string) => (
+    <BoutonsExportTableau domaine="epargne" parametres={{ arrete: t.arrete, debut: t.debut, fin: t.fin, niveau: niveauExport }} />
+  );
+  const periode = `du ${dateLongue(t.debut)} au ${dateLongue(t.fin)}`;
+  const sansM1 = !t.precedent;
+  const aideColonnes = (
+    <>
+      Stock = inventaire du {dateLongue(t.arrete)} ; flux = mouvements des inventaires {periode} (mois entiers), en USD.
+      {sansM1 && " Encours M-1 et croissance masqués : aucun inventaire du mois précédent n'est chargé."}
+      {t.niveau === "produit" || t.niveau === "type" ? " Crédit et couverture : sans objet par produit ou par type (ils se lisent par agence ou par client)." : ""}
+    </>
+  );
+  const DESCRIPTIONS: Record<string, React.ReactNode> = {
+    agence: <>Une ligne par agence, MICROPOP en tête. Clic sur une agence : ses clients. Couverture = épargne de l&apos;agence ÷ encours crédit de l&apos;agence. {aideColonnes}</>,
+    produit: <>Chaque produit tel qu&apos;il figure dans l&apos;inventaire dépôt (libellé du CBS), avec son type et sa devise. {aideColonnes}</>,
+    type: <>Les produits regroupés en trois types (règle CDG) : à terme = Pop Monnaie / EducaPop à terme ; obligatoire = Pop Monnaie Nantie + Caution groupes ; à vue = tous les autres. Clic sur un type : ses agences. {aideColonnes}</>,
+    client: <>
+      Les {entier(t.lignes.length - 1)} plus gros soldes (tous comptes du client cumulés, en USD) parmi {entier(t.nb_lignes_total)} épargnants de la sélection ;
+      filtrer par agence ou par statut pour voir les autres. Code client = identifiant du CBS (le même que dans l&apos;extraction crédit).
+      Couverture = épargne du client ÷ son encours crédit (vide si le client n&apos;a pas de crédit). {aideColonnes}
+    </>,
+  };
+  const TITRES: Record<string, string> = {
+    agence: "Epargne par agence", produit: "Detail par produit (inventaire)", type: "Resume par type de depot", client: "Epargne par client",
+  };
+  const nomsAbsents = t.niveau === "client" && detail.some((l) => !l.nom_client);
+
   // Descente : agence → ses clients ; produit / type → leurs agences.
   const liens: Record<string, string> = {};
   for (const l of detail) {
@@ -204,7 +243,6 @@ export default async function PageEpargne({
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <BoutonsExportTableau domaine="epargne" parametres={{ arrete: t.arrete, debut: t.debut, fin: t.fin, niveau: t.niveau }} />
               {total && <span className="print:hidden"><BoutonExport domaine="epargne" arrete={t.arrete} libelle="Classeur detaille" /></span>}
             </div>
           </header>
@@ -214,6 +252,21 @@ export default async function PageEpargne({
           <AvisArrete resolu={resolu} />
 
           <section aria-label="Filtres" className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-pop-bord bg-pop-carte px-4 py-3 shadow-sm print:hidden">
+            {/* Toujours visible : actif des qu'un filtre est applique, grise sinon. */}
+            {CLES_FILTRES_EPARGNE.some((k) => un(k) && !(k === "agence" && !total)) ? (
+              <Link
+                href={lienAvec(Object.fromEntries(CLES_FILTRES_EPARGNE.map((k) => [k, undefined])))}
+                className="w-full rounded-lg border border-pop-danger/50 bg-pop-danger/5 px-3 py-1.5 text-center text-xs font-semibold text-pop-danger hover:bg-pop-danger/10 sm:w-auto"
+                scroll={false}
+              >
+                ↺ Reinitialiser les filtres ({CLES_FILTRES_EPARGNE.filter((k) => un(k)).length})
+              </Link>
+            ) : (
+              <span aria-disabled="true" title="Aucun filtre applique"
+                className="w-full cursor-not-allowed rounded-lg border border-pop-bord px-3 py-1.5 text-center text-xs text-pop-gris/60 sm:w-auto">
+                ↺ Reinitialiser les filtres
+              </span>
+            )}
             {FILTRES_EPARGNE.map((f) => (
               <div key={f.cle} className="flex flex-wrap items-center gap-1.5">
                 <span className="text-xs text-pop-gris">{f.libelle} :</span>
@@ -267,11 +320,21 @@ export default async function PageEpargne({
           <div className="grid gap-6 xl:grid-cols-2">
             {detail.length > 1 && (
               <section className="rounded-xl border border-pop-bord bg-pop-carte p-5 shadow-sm">
-                <GraphiqueEpargne lignes={detail} cliquable={total && t.niveau === "agence"} />
+                <GraphiqueEpargne
+                  lignes={t.niveau === "client"
+                    ? detail.slice(0, 20).map((l) => ({ ...l, designation: l.nom_client ? `${l.nom_client} (${l.designation})` : l.designation }))
+                    : detail}
+                  cliquable={total && t.niveau === "agence"} />
+                <p className="mt-3 text-xs leading-relaxed text-pop-gris">
+                  Compare les lignes du tableau ci-dessous ({t.niveau === "client" ? "les 20 plus gros soldes" : `par ${NIVEAUX_EPARGNE.find((x) => x.cle === t.niveau)?.libelle.toLowerCase()}`})
+                  sur l&apos;indicateur choisi dans la liste : encours, dépôts, retraits, collecte nette, couverture, croissance, épargnants.
+                  Barres triées de la plus forte à la plus faible.{total && t.niveau === "agence" ? " Clic sur une agence : l'écran se filtre sur elle." : ""}
+                </p>
               </section>
             )}
             <section className="rounded-xl border border-pop-bord bg-pop-carte p-5 shadow-sm">
               <h2 className="text-sm font-semibold text-pop-encre">Repartition par type de depot (USD)</h2>
+              <p className="mt-1 text-xs text-pop-gris">Encours de la sélection ({g.designation}) réparti entre les trois types de dépôt.</p>
               <div className="mt-3">
                 <VentilationEpargne parType={{ a_vue: g.a_vue, a_terme: g.a_terme, obligatoire: g.obligatoire }} total={g.encours} />
               </div>
@@ -284,24 +347,63 @@ export default async function PageEpargne({
               agence pour voir les autres. La premiere ligne couvre toute la selection.
             </p>
           )}
-          <TableauEpargneTdb lignes={t.lignes} liens={liens} />
+          {nomsAbsents && (
+            <p role="status" className="text-xs text-pop-alerte">
+              Noms et statuts absents : l&apos;inventaire du {dateLongue(t.arrete)} a été importé avant leur ajout.
+              Le réimporter (page Import, domaine « epargne ») pour les afficher.
+            </p>
+          )}
+          <TableauEpargneTdb lignes={t.lignes} liens={liens} niveau={t.niveau} avecEvolution={!sansM1}
+            titre={TITRES[t.niveau]} description={DESCRIPTIONS[t.niveau]} exporter={exportDe(t.niveau)} />
+          {compagnon?.ok && niveauCompagnon && (
+            <TableauEpargneTdb lignes={compagnon.donnees.lignes} niveau={niveauCompagnon} avecEvolution={!sansM1}
+              titre={TITRES[niveauCompagnon]} description={DESCRIPTIONS[niveauCompagnon]} exporter={exportDe(niveauCompagnon)} />
+          )}
 
           {top.ok && (
             <section aria-label="Top epargnants" className="space-y-3">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="mr-2 text-lg font-semibold text-pop-encre">Top {topN} epargnants</h2>
+                <span className="w-full text-xs text-pop-gris sm:order-last">
+                  Les {topN} clients au plus gros solde au {dateLongue(t.arrete)} : tous leurs comptes cumulés, CDF converti en USD au
+                  taux de l&apos;arrêté, dans la sélection des filtres ci-dessus. Changer N avec les pastilles.
+                </span>
                 {TOPS.map((x) => (
                   <Link key={x} href={lienAvec({ top: String(x) })} className={pastille(x === topN)} scroll={false}>
                     Top {x}
                   </Link>
                 ))}
+                <div className="ml-auto">
+                  <ExportSections
+                    titre={`Top ${topN} epargnants`}
+                    sousTitre={`Arrete du ${dateLongue(t.arrete)} ; solde de tous les comptes du client, converti en USD`}
+                    nom={`PopPilot_top${topN}_epargnants_${t.arrete}`}
+                    sections={[{
+                      colonnes: [
+                        { libelle: "Rang", cle: "rang" }, { libelle: "Code client", cle: "id_client" },
+                        { libelle: "Nom du client", cle: "nom_client" }, { libelle: "Statut juridique", cle: "statut_juridique" },
+                        { libelle: "Agence", cle: "agence" },
+                        { libelle: "Comptes", cle: "nb_comptes" }, { libelle: "Solde (USD)", cle: "solde_usd" },
+                      ],
+                      lignes: top.donnees.clients.map((c, i) => ({ ...c, rang: i + 1 })),
+                    }]}
+                  />
+                </div>
               </div>
+              {top.donnees.clients.some((c) => !c.nom_client) && (
+                <p role="status" className="text-xs text-pop-alerte">
+                  Noms absents : l&apos;inventaire du {dateLongue(t.arrete)} a ete importe avant l&apos;ajout du nom
+                  des clients. Le reimporter (page Import, domaine « epargne ») pour les afficher.
+                </p>
+              )}
               <div className="overflow-x-auto rounded-xl border border-pop-bord bg-pop-carte shadow-sm">
-                <table className="w-full min-w-[28rem] border-collapse text-[12px]">
+                <table className="w-full min-w-[36rem] border-collapse text-[12px]">
                   <thead>
                     <tr className="border-b border-pop-bord text-pop-gris">
                       <th className="px-3 py-2 text-left">#</th>
-                      <th className="px-3 py-2 text-left">Client (id)</th>
+                      <th className="px-3 py-2 text-left">Code client</th>
+                      <th className="px-3 py-2 text-left">Nom du client</th>
+                      <th className="px-3 py-2 text-left">Statut juridique</th>
                       <th className="px-3 py-2 text-left">Agence</th>
                       <th className="px-3 py-2 text-right">Comptes</th>
                       <th className="px-3 py-2 text-right">Solde (USD)</th>
@@ -311,7 +413,9 @@ export default async function PageEpargne({
                     {top.donnees.clients.map((c, i) => (
                       <tr key={c.id_client} className="border-b border-pop-bord/60">
                         <td className="chiffres px-3 py-1.5 text-pop-gris">{i + 1}</td>
-                        <td className="chiffres px-3 py-1.5 text-pop-encre">{c.id_client}</td>
+                        <td className="chiffres px-3 py-1.5 text-pop-gris">{c.id_client}</td>
+                        <td className="px-3 py-1.5 font-medium text-pop-encre">{c.nom_client ?? "—"}</td>
+                        <td className="px-3 py-1.5 text-pop-encre">{c.statut_juridique ?? "—"}</td>
                         <td className="px-3 py-1.5 text-pop-encre">{c.agence ?? "—"}</td>
                         <td className="chiffres px-3 py-1.5 text-right">{entier(c.nb_comptes)}</td>
                         <td className="chiffres px-3 py-1.5 text-right font-medium">{montant(c.solde_usd)}</td>
@@ -326,6 +430,11 @@ export default async function PageEpargne({
           {e && (
             <section className="space-y-3">
               <h2 className="text-lg font-semibold text-pop-encre">Synthese institutionnelle (devises d&apos;origine)</h2>
+              <p className="text-xs leading-relaxed text-pop-gris">
+                Toute l&apos;épargne MICROPOP au {dateLongue(t.arrete)}, sans les filtres de l&apos;écran : par type de dépôt et par devise
+                d&apos;émission (USD et CDF gardés séparés, puis le total converti en USD). C&apos;est la synthèse validée qui sert au FINA
+                et au bilan ; les produits détaillés sont dans l&apos;onglet Produits.
+              </p>
               <TableauEpargneDevises parTypeDevise={e.par_type_devise} parDeviseOrigine={e.par_devise_origine}
                 taux={e.taux_change} encoursTotal={e.encours_total} />
             </section>
@@ -334,7 +443,8 @@ export default async function PageEpargne({
           <p className="text-xs leading-relaxed text-pop-gris">
             Les flux d&apos;epargne viennent de l&apos;inventaire mensuel : la periode se lit par mois entiers, chaque mois
             converti a son taux. Epargnants = clients distincts (ils ne s&apos;additionnent pas d&apos;une ligne a l&apos;autre).
-            Titulaire : code 1 = homme, 2 = femme, non renseigne = personne morale ou groupe.
+            Sexe : code 1 = homme, 2 = femme, non renseigne = personne morale ou groupe. Statut juridique (code du CBS) :
+            1 = personne physique, 2 = personne morale, 4 = groupe solidaire — il se filtre independamment des produits de groupe.
           </p>
         </div>
       </Coquille>

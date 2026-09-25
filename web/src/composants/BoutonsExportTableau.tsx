@@ -3,12 +3,10 @@
 /**
  * PopPilot — exports d'un tableau de bord TEL QU'AFFICHE : CSV, Excel, PDF.
  *
- *  - CSV / Excel : liens vers /api/export-tableau/{domaine} avec les parametres
+ *  - CSV / Excel / PDF : liens vers /api/export-tableau/{domaine} avec les parametres
  *    de l'ecran (arrete, periode, niveau, filtres) — l'API rappelle les memes
- *    moteurs, le fichier est donc identique a l'ecran.
- *  - PDF : impression du navigateur (« Enregistrer au format PDF »), avec une mise
- *    en page dediee (menus et selecteurs masques, paysage). Elle reproduit
- *    exactement ce qu'on regarde, graphiques compris, sans dependance serveur.
+ *    moteurs, le fichier est donc identique a l'ecran. PDF = tableau pagine.
+ *  - Imprimer : l'ecran entier (graphiques compris), mise en page d'impression dediee.
  */
 import { useSearchParams } from "next/navigation";
 
@@ -19,7 +17,7 @@ export function BoutonsExportTableau({
   domaine,
   parametres = {},
 }: {
-  domaine: "credit" | "epargne" | "clients";
+  domaine: "credit" | "epargne" | "clients" | "taux";
   /** Parametres a imposer en plus de ceux de l'URL (ex. l'arrete reellement affiche). */
   parametres?: Record<string, string | undefined>;
 }) {
@@ -40,8 +38,11 @@ export function BoutonsExportTableau({
       <a href={lien("xlsx")} download className={bouton}>
         <span aria-hidden>↓</span> Excel
       </a>
+      <a href={lien("pdf")} download className={bouton}>
+        <span aria-hidden>↓</span> PDF
+      </a>
       <button type="button" onClick={() => window.print()} className={bouton}>
-        <span aria-hidden>⎙</span> PDF
+        <span aria-hidden>⎙</span> Imprimer
       </button>
     </div>
   );

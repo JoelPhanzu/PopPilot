@@ -140,6 +140,8 @@ class FaitEpargne(Base):
     id_compte = Column(String, nullable=False)
     num_complet_cpte = Column(String)
     id_client = Column(String)
+    nom_client = Column(String)                         # nom_complet de l'inventaire (SQL 09)
+    statut_juridique = Column(String)                   # 1 = PP, 2 = PM, 4 = groupe solidaire (SQL 10)
     id_prod = Column(String)
     libelle_produit = Column(String)
     agence = Column(String)

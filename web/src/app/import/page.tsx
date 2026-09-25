@@ -14,6 +14,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Coquille } from "@/composants/Coquille";
+import { ExportSections } from "@/composants/ExportSections";
 import { FournisseurSession } from "@/composants/ContexteSession";
 import { sessionCourante } from "@/lib/session";
 import { peutEcrire } from "@/lib/roles";
@@ -144,6 +145,22 @@ export default async function PageImport() {
               </p>
             ) : (
               <div className="mt-4 overflow-x-auto">
+                <div className="mb-3">
+                  <ExportSections
+                    titre="Journal des imports"
+                    sousTitre={`Base : ${journal.donnees.base}`}
+                    nom="PopPilot_journal_imports"
+                    sections={[{
+                      colonnes: [
+                        { libelle: "Domaine", cle: "domaine" }, { libelle: "Arrete", cle: "date_arrete" },
+                        { libelle: "Fichier", cle: "fichier" }, { libelle: "Lignes", cle: "acceptees" },
+                        { libelle: "Rejetees", cle: "rejetees" }, { libelle: "Charge le", cle: "horodatage" },
+                        { libelle: "Message", cle: "message" },
+                      ],
+                      lignes: journal.donnees.imports,
+                    }]}
+                  />
+                </div>
                 <table className="w-full min-w-[46rem] border-collapse text-sm">
                   <thead>
                     <tr className="border-b border-pop-bord text-left text-xs uppercase tracking-wide text-pop-gris">

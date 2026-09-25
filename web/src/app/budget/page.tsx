@@ -35,6 +35,8 @@ import { CarteIndicateur } from "@/composants/CarteIndicateur";
 import { AvisArrete } from "@/composants/AvisArrete";
 import { arreteAffiche } from "@/lib/arretes";
 import { SelecteurArrete } from "@/composants/SelecteurArrete";
+import { ExportSections } from "@/composants/ExportSections";
+import { sectionsBudget } from "@/lib/exports";
 import { SelecteurNiveauBudget } from "@/composants/SelecteurNiveauBudget";
 import { SelecteurVoletBudget } from "@/composants/SelecteurVoletBudget";
 import { BandeauSource } from "@/composants/BandeauSource";
@@ -171,7 +173,15 @@ export default async function PageBudget({
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <BoutonExport domaine="budget" arrete={tableau.arrete} parametres={{ hypothese: b?.hypothese }} />
+              <BoutonExport domaine="budget" arrete={tableau.arrete} parametres={{ hypothese: b?.hypothese }} libelle="Classeur detaille" />
+              {tableau.source === "api" && b !== null && b.mapping_present && (
+                <ExportSections
+                  titre="Suivi budgetaire"
+                  sousTitre={`Arrete du ${dateLongue(tableau.arrete)} - exercice ${b.exercice}, ${nomMois(b.mois)}, hypothese ${b.hypothese} (taux en rapport : 1,25 = 125 %)`}
+                  nom={`PopPilot_budget_${tableau.arrete}`}
+                  sections={sectionsBudget(b.lignes)}
+                />
+              )}
               <p className="text-xs text-pop-gris">
                 Source&nbsp;:{" "}
                 {tableau.source === "api"

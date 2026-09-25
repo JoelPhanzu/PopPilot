@@ -217,6 +217,8 @@ export async function appelerApiEcriture<T>(
 export async function recupererFichierApi(
   chemin: string,
   jeton: string | null,
+  /** Corps JSON : la requete part alors en POST (export generique /export/sections). */
+  corps?: unknown,
 ): Promise<{ ok: true; reponse: Response } | { ok: false; statut: number | null; erreur: string }> {
   if (!jeton) {
     return { ok: false, statut: 401, erreur: "Aucun jeton de session a transmettre a l'API." };
@@ -225,10 +227,14 @@ export async function recupererFichierApi(
   const url = `${URL_API.replace(/\/+$/, "")}${chemin}`;
   let reponse: Response;
   try {
-    reponse = await fetch(url, {
-      headers: { Authorization: `Bearer ${jeton}` },
-      cache: "no-store",
-    });
+    reponse = await fetch(url, corps === undefined
+      ? { headers: { Authorization: `Bearer ${jeton}` }, cache: "no-store" }
+      : {
+          method: "POST",
+          headers: { Authorization: `Bearer ${jeton}`, "Content-Type": "application/json" },
+          body: JSON.stringify(corps),
+          cache: "no-store",
+        });
   } catch (e) {
     return { ok: false, statut: null, erreur: messageDindisponibilite(e, chemin) };
   }

@@ -24,6 +24,8 @@ import { CarteIndicateur } from "@/composants/CarteIndicateur";
 import { AvisArrete } from "@/composants/AvisArrete";
 import { arreteAffiche } from "@/lib/arretes";
 import { SelecteurArrete } from "@/composants/SelecteurArrete";
+import { ExportSections } from "@/composants/ExportSections";
+import { sectionsComptabilite } from "@/lib/exports";
 import { BandeauSource } from "@/composants/BandeauSource";
 import { BoutonExport } from "@/composants/BoutonExport";
 import { TableauBilan } from "@/composants/TableauBilan";
@@ -209,7 +211,15 @@ export default async function PageComptabilite({
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <BoutonExport domaine="comptabilite" arrete={tableau.arrete} />
+              <BoutonExport domaine="comptabilite" arrete={tableau.arrete} libelle="Classeur detaille" />
+              {tableau.source === "api" && (
+                <ExportSections
+                  titre="Comptabilite et indicateurs"
+                  sousTitre={`Arrete du ${dateLongue(tableau.arrete)} - MICROPOP, toutes agences (USD)`}
+                  nom={`PopPilot_comptabilite_${tableau.arrete}`}
+                  sections={sectionsComptabilite(etats, detail, indicateurs)}
+                />
+              )}
               <p className="text-xs text-pop-gris">
                 Source&nbsp;:{" "}
                 {tableau.source === "api"

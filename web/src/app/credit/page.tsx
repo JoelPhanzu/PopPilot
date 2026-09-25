@@ -208,7 +208,6 @@ export default async function PageCredit({
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <BoutonsExportTableau domaine="credit" parametres={{ arrete: t.arrete, debut: t.debut, fin: t.fin, niveau: t.niveau }} />
               <span className="print:hidden"><BoutonExport domaine="credit" arrete={t.arrete} libelle="Classeur detaille" /></span>
             </div>
           </header>
@@ -301,7 +300,9 @@ export default async function PageCredit({
               agence, superviseur ou agent pour voir les autres. La ligne MICROPOP couvre toute la selection.
             </p>
           )}
-          <TableauDailyTool lignes={t.lignes} liens={liens} />
+          <TableauDailyTool lignes={t.lignes} liens={liens}
+            titre={`DailyTool — par ${NIVEAUX_TDB.find((n) => n.cle === t.niveau)?.libelle.toLowerCase() ?? t.niveau}`}
+            exporter={<BoutonsExportTableau domaine="credit" parametres={{ arrete: t.arrete, debut: t.debut, fin: t.fin, niveau: t.niveau }} />} />
 
           {top?.ok ? (
             <TableauTopClients top={top.donnees}

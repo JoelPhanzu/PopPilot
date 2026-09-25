@@ -30,3 +30,9 @@ web/.env*
 .DS_Store
 Thumbs.db
 .vscode/
+
+# Déploiement local : sauvegardes de base et fichiers temporaires de Supabase CLI
+sauvegardes/
+archives_depot/
+supabase/.temp/
+supabase/.branches/
