@@ -36,3 +36,12 @@ sauvegardes/
 archives_depot/
 supabase/.temp/
 supabase/.branches/
+
+# Fichiers verrous Office (Word/Excel ouverts)
+~$*
+
+# Rapports reglementaires reels et extractions CBS deposes dans docs/ (donnees clients : hors depot)
+docs/Rapport_Brouillard_Caisse*
+docs/AML_*_rempli*
+docs/MFII*.xls
+docs/Syst*me de paiement*
